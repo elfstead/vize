@@ -83,13 +83,23 @@ pub(super) fn generate_get_text_child(ctx: &mut GenerateContext, get_text: &GetT
 pub(super) fn generate_child_ref(ctx: &mut GenerateContext, child_ref: &ChildRefIRNode) {
     ctx.use_helper("child");
     if child_ref.offset == 0 {
-        ctx.push_line_fmt(format_args!(
-            "const n{} = _child(n{})",
-            child_ref.child_id, child_ref.parent_id
-        ));
+        if child_ref.logical_index == 0 {
+            ctx.push_line_fmt(format_args!(
+                "const n{} = _child(n{})",
+                child_ref.child_id, child_ref.parent_id
+            ));
+        } else {
+            ctx.push_line_fmt(format_args!(
+                "const n{} = _child(n{}, {})",
+                child_ref.child_id, child_ref.parent_id, child_ref.logical_index
+            ));
+        }
     } else {
         ctx.use_helper("next");
-        let expr = build_next_chain(cstr!("_child(n{})", child_ref.parent_id), child_ref.offset);
+        let expr = build_next_chain(
+            cstr!("_child(n{})", child_ref.parent_id),
+            child_ref.logical_index,
+        );
         ctx.push_line_fmt(format_args!("const n{} = {}", child_ref.child_id, expr));
     }
 }
@@ -97,7 +107,7 @@ pub(super) fn generate_child_ref(ctx: &mut GenerateContext, child_ref: &ChildRef
 /// Generate NextRef (_next helper)
 pub(super) fn generate_next_ref(ctx: &mut GenerateContext, next_ref: &NextRefIRNode) {
     ctx.use_helper("next");
-    let expr = build_next_chain(cstr!("n{}", next_ref.prev_id), next_ref.offset);
+    let expr = build_next_chain(cstr!("n{}", next_ref.prev_id), next_ref.logical_index);
     ctx.push_line_fmt(format_args!("const n{} = {}", next_ref.child_id, expr));
 }
 

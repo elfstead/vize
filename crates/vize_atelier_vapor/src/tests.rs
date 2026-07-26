@@ -149,6 +149,35 @@ fn test_compile_nested_component_child() {
 }
 
 #[test]
+fn test_compile_nested_components_use_logical_insertion_indices() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        "<header><Brand /><nav><Link /><Link /></nav><button @click=\"count++\">{{ count }}</button></header>",
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "Expected no errors: {:?}",
+        result.error_messages
+    );
+
+    let code = normalize_code(&result.code);
+    assert_eq!(code.matches("_setInsertionState(").count(), 3);
+    assert_eq!(code.matches(", 0, 0)").count(), 2);
+    assert_eq!(code.matches(", null, 1)").count(), 1);
+    assert!(
+        code.lines()
+            .any(|line| line.contains(" = _child(") && line.ends_with(", 1)"))
+    );
+    assert!(
+        code.lines()
+            .any(|line| line.contains(" = _next(") && line.ends_with(", 2)"))
+    );
+}
+
+#[test]
 fn test_compile_nested_slot_outlet_child() {
     let allocator = Bump::new();
     let result = compile_vapor(

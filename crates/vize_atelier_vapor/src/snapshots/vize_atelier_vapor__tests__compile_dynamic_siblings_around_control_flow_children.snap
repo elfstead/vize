@@ -11,7 +11,7 @@ export function render(_ctx) {
 const n1 = t1()
 const n0 = _child(n1)
 const n2 = _child(n0)
-const n3 = _next(n2, 1)
+const n3 = _next(n2, 2)
 n2.$evtclick = _createInvoker(() => (_ctx.activeTab = 'code'))
 n3.$evtclick = _createInvoker(() => (_ctx.activeTab = 'helpers'))
 _setInsertionState(n0, null, true)

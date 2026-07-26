@@ -21,6 +21,7 @@ pub(super) fn transform_component<'a>(
     existing_id: Option<usize>,
     parent: Option<usize>,
     anchor: Option<usize>,
+    logical_index: Option<usize>,
     add_return: bool,
 ) {
     let tag = el.tag.as_str();
@@ -287,6 +288,7 @@ pub(super) fn transform_component<'a>(
         v_show: v_show_exp,
         parent,
         anchor,
+        logical_index,
     };
 
     block

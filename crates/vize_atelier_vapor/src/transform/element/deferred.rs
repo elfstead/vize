@@ -208,6 +208,7 @@ fn transform_dynamic_children_with_ids<'a>(
         };
 
         if is_template_backed_element(child_el) {
+            let logical_index = count_logical_child_nodes(&el.children, 0, child_index);
             if let Some((prev_child_id, prev_child_index)) = prev_template_backed_child {
                 let offset =
                     count_rendered_child_nodes(&el.children, prev_child_index + 1, child_index);
@@ -215,6 +216,7 @@ fn transform_dynamic_children_with_ids<'a>(
                     child_id,
                     prev_id: prev_child_id,
                     offset,
+                    logical_index,
                 }));
             } else {
                 let offset =
@@ -225,6 +227,7 @@ fn transform_dynamic_children_with_ids<'a>(
                         child_id,
                         parent_id,
                         offset,
+                        logical_index,
                     }));
             }
 
@@ -233,6 +236,7 @@ fn transform_dynamic_children_with_ids<'a>(
         } else if child_el.tag_type == ElementType::Slot {
             transform_slot_outlet_child(ctx, child_el, child_id, parent_id, block);
         } else {
+            let logical_index = count_logical_child_nodes(&el.children, 0, child_index);
             transform_component(
                 ctx,
                 child_el,
@@ -240,6 +244,7 @@ fn transform_dynamic_children_with_ids<'a>(
                 Some(child_id),
                 Some(parent_id),
                 None,
+                Some(logical_index),
                 false,
             );
         }
@@ -430,6 +435,44 @@ fn count_rendered_nodes_for_child(child: &TemplateChildNode<'_>, in_text_run: &m
             } else {
                 0
             }
+        }
+        TemplateChildNode::Text(_) | TemplateChildNode::Interpolation(_) => {
+            if *in_text_run {
+                0
+            } else {
+                *in_text_run = true;
+                1
+            }
+        }
+        _ => 0,
+    }
+}
+
+fn count_logical_child_nodes(
+    children: &[TemplateChildNode<'_>],
+    start: usize,
+    end: usize,
+) -> usize {
+    let mut count = 0usize;
+    let mut in_text_run = false;
+    for child in &children[start..end] {
+        count += count_logical_nodes_for_child(child, &mut in_text_run);
+    }
+    count
+}
+
+fn count_logical_nodes_for_child(child: &TemplateChildNode<'_>, in_text_run: &mut bool) -> usize {
+    match child {
+        TemplateChildNode::Element(child_el) if child_el.tag_type == ElementType::Template => {
+            child_el
+                .children
+                .iter()
+                .map(|child| count_logical_nodes_for_child(child, in_text_run))
+                .sum()
+        }
+        TemplateChildNode::Element(_) | TemplateChildNode::If(_) | TemplateChildNode::For(_) => {
+            *in_text_run = false;
+            1
         }
         TemplateChildNode::Text(_) | TemplateChildNode::Interpolation(_) => {
             if *in_text_run {

@@ -293,6 +293,7 @@ pub struct CreateComponentIRNode<'a> {
     pub v_show: Option<Box<'a, SimpleExpressionNode<'a>>>,
     pub parent: Option<usize>,
     pub anchor: Option<usize>,
+    pub logical_index: Option<usize>,
 }
 
 /// IR slot
@@ -324,6 +325,7 @@ pub struct ChildRefIRNode {
     pub child_id: usize,
     pub parent_id: usize,
     pub offset: usize,
+    pub logical_index: usize,
 }
 
 /// Next sibling reference operation (_next helper)
@@ -332,4 +334,5 @@ pub struct NextRefIRNode {
     pub child_id: usize,
     pub prev_id: usize,
     pub offset: usize,
+    pub logical_index: usize,
 }

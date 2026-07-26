@@ -7,19 +7,33 @@ pub(super) fn emit_insertion_state(
     ctx: &mut GenerateContext,
     parent: Option<usize>,
     anchor: Option<usize>,
+    logical_index: Option<usize>,
 ) {
     let Some(parent_id) = parent else {
         return;
     };
     ctx.use_helper("setInsertionState");
-    let anchor_expr = anchor
-        .map(|anchor_id| cstr!("n{}", anchor_id))
-        .unwrap_or_else(|| String::from("null"));
-    ctx.push_line(&cstr!(
-        "_setInsertionState(n{}, {}, true)",
-        parent_id,
-        anchor_expr
-    ));
+    let anchor_expr = if anchor.is_none() && logical_index == Some(0) {
+        String::from("0")
+    } else {
+        anchor
+            .map(|anchor_id| cstr!("n{}", anchor_id))
+            .unwrap_or_else(|| String::from("null"))
+    };
+    if let Some(index) = logical_index {
+        ctx.push_line(&cstr!(
+            "_setInsertionState(n{}, {}, {})",
+            parent_id,
+            anchor_expr,
+            index
+        ));
+    } else {
+        ctx.push_line(&cstr!(
+            "_setInsertionState(n{}, {}, true)",
+            parent_id,
+            anchor_expr
+        ));
+    }
 }
 
 pub(super) fn block_requires_parent_insertion_state(block: &BlockIRNode<'_>) -> bool {

@@ -116,7 +116,7 @@ pub(crate) fn transform_element<'a>(
     // Components handle their own ID allocation (slots consume IDs before the component)
     // Also handle <component :is="..."> (dynamic component) which the parser classifies as Element
     if el.tag_type == ElementType::Component || el.tag.as_str() == "component" {
-        transform_component(ctx, el, block, None, None, None, true);
+        transform_component(ctx, el, block, None, None, None, None, true);
         if entered_non_reactive {
             ctx.exit_non_reactive_scope();
         }
@@ -414,6 +414,7 @@ pub(crate) fn transform_element<'a>(
                 v_show: None,
                 parent: None,
                 anchor: None,
+                logical_index: None,
             };
 
             block
