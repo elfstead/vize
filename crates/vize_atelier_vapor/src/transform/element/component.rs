@@ -5,6 +5,7 @@ use super::{
     ExpressionNode, IRProp, IRSlot, OperationNode, PropNode, SimpleExpressionNode, SourceLocation,
     String, TemplateChildNode, TransformContext, Vec, transform_children,
 };
+use crate::ir::InsertionState;
 
 #[path = "component/slots.rs"]
 mod slots;
@@ -19,8 +20,7 @@ pub(super) fn transform_component<'a>(
     el: &ElementNode<'a>,
     block: &mut BlockIRNode<'a>,
     existing_id: Option<usize>,
-    parent: Option<usize>,
-    anchor: Option<usize>,
+    insertion: Option<InsertionState>,
     add_return: bool,
 ) {
     let tag = el.tag.as_str();
@@ -285,8 +285,7 @@ pub(super) fn transform_component<'a>(
         kind,
         is_expr,
         v_show: v_show_exp,
-        parent,
-        anchor,
+        insertion,
     };
 
     block

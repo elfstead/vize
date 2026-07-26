@@ -62,17 +62,18 @@ pub(crate) fn transform_interpolation<'a>(
     block.returns.push(element_id);
 }
 
-/// Transform text children (combined text and interpolations)
-pub(crate) fn transform_text_children<'a>(
+/// Transform one contiguous text/interpolation run.
+pub(crate) fn transform_text_children<'a, 'node>(
     ctx: &mut TransformContext<'a>,
-    children: &[TemplateChildNode<'a>],
-    parent_element_id: usize,
+    children: impl IntoIterator<Item = &'node TemplateChildNode<'a>>,
+    target_id: usize,
     block: &mut BlockIRNode<'a>,
-) {
+) where
+    'a: 'node,
+{
     let mut values = Vec::new_in(ctx.allocator);
 
-    // Collect all text parts and interpolations
-    for child in children.iter() {
+    for child in children {
         match child {
             TemplateChildNode::Text(text) => {
                 // Static text part
@@ -100,7 +101,7 @@ pub(crate) fn transform_text_children<'a>(
 
     if !values.is_empty() {
         let set_text = SetTextIRNode {
-            element: parent_element_id,
+            element: target_id,
             values,
         };
 

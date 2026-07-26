@@ -1,5 +1,6 @@
 //! Template string construction, escaping, and template-ref extraction.
 
+use super::child_layout::{ChildLayout, LayoutItem};
 use super::{
     BlockIRNode, Box, ElementNode, ElementType, ExpressionNode, OperationNode, PropNode,
     SetTemplateRefIRNode, SimpleExpressionNode, String, TemplateChildNode, TransformContext,
@@ -8,6 +9,14 @@ use super::{
 
 /// Generate element template string (recursively includes static children)
 pub(crate) fn generate_element_template(el: &ElementNode<'_>) -> String {
+    let layout = ChildLayout::new(&el.children);
+    generate_element_template_with_layout(el, &layout)
+}
+
+pub(super) fn generate_element_template_with_layout(
+    el: &ElementNode<'_>,
+    layout: &ChildLayout<'_, '_>,
+) -> String {
     let mut template = cstr!("<{}", el.tag);
 
     // Collect dynamic binding names to skip their static counterparts
@@ -50,22 +59,26 @@ pub(crate) fn generate_element_template(el: &ElementNode<'_>) -> String {
     } else {
         template.push('>');
 
-        // Recursively add template-backed children. Interpolations contribute a
-        // text placeholder while control-flow nodes are inserted at runtime.
-        for child in el.children.iter() {
-            match child {
-                TemplateChildNode::Text(text) => {
-                    template.push_str(&escape_html_text(&text.content));
-                }
-                TemplateChildNode::Interpolation(_) => {
-                    template.push(' ');
-                }
-                TemplateChildNode::Element(child_el) => {
-                    if is_template_backed_element(child_el) {
-                        template.push_str(&generate_element_template(child_el));
+        for item in layout.items() {
+            match *item {
+                LayoutItem::Element { flat_index, .. } => {
+                    if let TemplateChildNode::Element(child) = layout.child(flat_index) {
+                        template.push_str(&generate_element_template(child));
                     }
                 }
-                _ => {}
+                LayoutItem::TextRun { start, end, .. } => {
+                    for child in layout.text_run(start, end) {
+                        match child {
+                            TemplateChildNode::Text(text) => {
+                                template.push_str(&escape_html_text(&text.content));
+                            }
+                            TemplateChildNode::Interpolation(_) => template.push(' '),
+                            _ => {}
+                        }
+                    }
+                }
+                LayoutItem::Anchor { .. } => template.push_str("<!>"),
+                LayoutItem::Inserted { .. } => {}
             }
         }
 
@@ -93,7 +106,7 @@ pub(crate) fn escape_html_text(s: &str) -> String {
 
 /// Check if an element is static (no dynamic directives)
 pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
-    if !matches!(el.tag_type, ElementType::Element) {
+    if !matches!(el.tag_type, ElementType::Element) || el.tag.as_str() == "component" {
         return false;
     }
 
@@ -122,10 +135,6 @@ pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
     }
 
     true
-}
-
-pub(super) fn is_template_backed_element(el: &ElementNode<'_>) -> bool {
-    matches!(el.tag_type, ElementType::Element)
 }
 
 pub(super) fn transform_template_ref<'a>(

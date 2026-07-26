@@ -1,5 +1,7 @@
 //! Element transformation dispatch for Vapor IR lowering.
 
+#[path = "element/child_layout.rs"]
+mod child_layout;
 #[path = "element/component.rs"]
 mod component;
 #[path = "element/deferred.rs"]
@@ -10,8 +12,8 @@ mod template;
 use vize_carton::{Box, String, Vec, append, cstr};
 
 use crate::ir::{
-    BlockIRNode, ChildRefIRNode, ComponentKind, CreateComponentIRNode, IRProp, IRSlot,
-    NextRefIRNode, OperationNode, SetTemplateRefIRNode, SlotOutletIRNode,
+    BlockIRNode, ComponentKind, CreateComponentIRNode, IRProp, IRSlot, OperationNode,
+    SetTemplateRefIRNode, SlotOutletIRNode,
 };
 use vize_atelier_core::{
     ElementNode, ElementType, ExpressionNode, PropNode, SimpleExpressionNode, SourceLocation,
@@ -19,21 +21,16 @@ use vize_atelier_core::{
 };
 
 use self::{
+    child_layout::ChildLayout,
     component::transform_component,
-    deferred::{
-        transform_element_with_control_flow_children, transform_element_with_dynamic_children,
-    },
-    template::{generate_element_template, is_static_element, transform_template_ref},
+    deferred::{transform_element_runtime_work, transform_element_with_dynamic_children},
+    template::generate_element_template_with_layout,
 };
 
 use super::{
     context::TransformContext,
-    control::{
-        transform_for_node, transform_for_node_deferred_parent, transform_for_node_into_parent,
-        transform_if_node, transform_if_node_deferred_parent, transform_if_node_into_parent,
-    },
-    directive::transform_directive,
-    text::{transform_interpolation, transform_text, transform_text_children},
+    control::{transform_for_node, transform_if_node},
+    text::{transform_interpolation, transform_text},
     transform_children,
 };
 
@@ -80,43 +77,34 @@ pub(crate) fn transform_element<'a>(
         return;
     }
 
+    // Components handle their own ID allocation (slots consume IDs before the component).
+    // The parser classifies `<component :is>` as an element, so dispatch it
+    // before native child-layout analysis.
+    if el.tag_type == ElementType::Component || el.tag.as_str() == "component" {
+        transform_component(ctx, el, block, None, None, true);
+        if entered_non_reactive {
+            ctx.exit_non_reactive_scope();
+        }
+        return;
+    }
+
     // Check if this element has non-static children that require
     // deferred ID allocation (so inner templates/IDs come first).
-    let has_control_flow_children = el.tag_type == ElementType::Element
-        && el
-            .children
-            .iter()
-            .any(|c| matches!(c, TemplateChildNode::If(_) | TemplateChildNode::For(_)));
-    let has_dynamic_element_children = el.tag_type == ElementType::Element
-        && !has_control_flow_children
-        && el.children.iter().any(
-            |c| matches!(c, TemplateChildNode::Element(child_el) if !is_static_element(child_el)),
+    let child_layout =
+        (el.tag_type == ElementType::Element).then(|| ChildLayout::new(&el.children));
+    let has_dynamic_children = child_layout
+        .as_ref()
+        .is_some_and(ChildLayout::has_dynamic_children);
+
+    if has_dynamic_children {
+        transform_element_with_dynamic_children(
+            ctx,
+            el,
+            child_layout
+                .as_ref()
+                .expect("native elements have a child layout"),
+            block,
         );
-
-    if has_dynamic_element_children {
-        // Dynamic element children: allocate child IDs first, then parent ID.
-        // Use child/next navigation instead of separate templates.
-        transform_element_with_dynamic_children(ctx, el, block);
-        if entered_non_reactive {
-            ctx.exit_non_reactive_scope();
-        }
-        return;
-    }
-
-    if has_control_flow_children {
-        // Control flow children (v-if/v-for): defer parent ID and template
-        // allocation until after children, so inner IDs/templates come first.
-        transform_element_with_control_flow_children(ctx, el, block);
-        if entered_non_reactive {
-            ctx.exit_non_reactive_scope();
-        }
-        return;
-    }
-
-    // Components handle their own ID allocation (slots consume IDs before the component)
-    // Also handle <component :is="..."> (dynamic component) which the parser classifies as Element
-    if el.tag_type == ElementType::Component || el.tag.as_str() == "component" {
-        transform_component(ctx, el, block, None, None, None, true);
         if entered_non_reactive {
             ctx.exit_non_reactive_scope();
         }
@@ -127,38 +115,11 @@ pub(crate) fn transform_element<'a>(
 
     match el.tag_type {
         ElementType::Element => {
-            let template = generate_element_template(el);
-
-            // Process props and events
-            for prop in el.props.iter() {
-                match prop {
-                    PropNode::Directive(dir) => {
-                        transform_directive(ctx, dir, element_id, el, block);
-                    }
-                    PropNode::Attribute(_attr) => {
-                        // Static attributes are included in the template
-                    }
-                }
-            }
-
-            transform_template_ref(ctx, el, element_id, block);
-
-            // Check if we have mixed text and interpolation children
-            let has_text_or_interpolation = el.children.iter().any(|c| {
-                matches!(
-                    c,
-                    TemplateChildNode::Text(_) | TemplateChildNode::Interpolation(_)
-                )
-            });
-            let has_interpolation = el
-                .children
-                .iter()
-                .any(|c| matches!(c, TemplateChildNode::Interpolation(_)));
-
-            if has_interpolation && has_text_or_interpolation {
-                // Collect all text parts and interpolations together
-                transform_text_children(ctx, &el.children, element_id, block);
-            }
+            let layout = child_layout
+                .as_ref()
+                .expect("native elements have a child layout");
+            let template = generate_element_template_with_layout(el, layout);
+            transform_element_runtime_work(ctx, el, layout, element_id, block);
 
             // Register template (no deferred children to process)
             ctx.add_template(element_id, template);
@@ -412,8 +373,7 @@ pub(crate) fn transform_element<'a>(
                 kind: crate::ir::ComponentKind::Regular,
                 is_expr: None,
                 v_show: None,
-                parent: None,
-                anchor: None,
+                insertion: None,
             };
 
             block
@@ -429,6 +389,7 @@ pub(crate) fn transform_element<'a>(
                 name,
                 props,
                 fallback,
+                insertion: None,
             };
 
             block.operation.push(OperationNode::SlotOutlet(slot_outlet));

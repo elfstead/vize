@@ -7,7 +7,7 @@ use super::{
         destructure::parse_destructure_bindings,
         generate_block,
     },
-    insertion::{block_requires_parent_insertion_state, emit_insertion_state},
+    insertion::emit_insertion_state,
 };
 
 /// Generate For
@@ -17,7 +17,7 @@ pub(super) fn generate_for(
     element_template_map: &FxHashMap<usize, usize>,
 ) {
     ctx.use_helper("createFor");
-    emit_insertion_state(ctx, for_node.parent, for_node.anchor);
+    emit_insertion_state(ctx, for_node.insertion);
 
     let depth = ctx.for_scopes.len();
     let source = if for_node.source.is_static {
@@ -72,9 +72,6 @@ pub(super) fn generate_for(
         .concat(),
     );
     ctx.indent();
-    if block_requires_parent_insertion_state(&for_node.render) {
-        emit_insertion_state(ctx, for_node.parent, for_node.anchor);
-    }
     ctx.push_component_scope();
     generate_block(ctx, &for_node.render, element_template_map);
     ctx.pop_component_scope();

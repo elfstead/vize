@@ -25,6 +25,7 @@ pub fn transform_slot_outlet<'a>(
         name,
         props,
         fallback,
+        insertion: None,
     };
 
     OperationNode::SlotOutlet(slot_outlet)

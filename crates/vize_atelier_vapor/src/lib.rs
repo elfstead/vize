@@ -56,9 +56,10 @@ pub use generators::{
 pub use ir::{
     BlockIRNode, ComponentKind, CreateComponentIRNode, DirectiveIRNode, DynamicFlag,
     EventModifiers, EventOptions, ForIRNode, GetTextChildIRNode, IRDynamicInfo, IREffect,
-    IRNodeType, IRProp, IRSlot, IfIRNode, InsertNodeIRNode, NegativeBranch, OperationNode,
-    PrependNodeIRNode, RootIRNode, SetDynamicPropsIRNode, SetEventIRNode, SetHtmlIRNode,
-    SetPropIRNode, SetTemplateRefIRNode, SetTextIRNode, SlotOutletIRNode,
+    IRNodeType, IRProp, IRSlot, IfIRNode, InsertNodeIRNode, InsertionAnchor, InsertionState,
+    NegativeBranch, OperationNode, PrependNodeIRNode, RootIRNode, SetDynamicPropsIRNode,
+    SetEventIRNode, SetHtmlIRNode, SetPropIRNode, SetTemplateRefIRNode, SetTextIRNode,
+    SlotOutletIRNode,
 };
 pub use lower::transform_to_ir;
 pub use steps::{

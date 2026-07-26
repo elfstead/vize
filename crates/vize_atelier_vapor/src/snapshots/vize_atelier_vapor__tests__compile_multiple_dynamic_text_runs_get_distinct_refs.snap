@@ -1,0 +1,16 @@
+---
+source: crates/vize_atelier_vapor/src/tests.rs
+expression: code.as_str()
+---
+import { child as _child, nthChild as _nthChild, toDisplayString as _toDisplayString, setText as _setText, renderEffect as _renderEffect, template as _template } from 'vue';
+const t0 = _template("<div> <span></span> </div>", true)
+export function render(_ctx) {
+const n2 = t0()
+const n0 = _child(n2)
+const n1 = _nthChild(n2, 2)
+_renderEffect(() => {
+_setText(n0, _toDisplayString(_ctx.first))
+_setText(n1, _toDisplayString(_ctx.second))
+})
+return n2
+}

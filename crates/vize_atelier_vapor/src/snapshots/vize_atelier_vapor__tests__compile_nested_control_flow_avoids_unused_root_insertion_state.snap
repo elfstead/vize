@@ -1,5 +1,5 @@
 ---
-source: crates/vize_atelier_vapor/src/lib.rs
+source: crates/vize_atelier_vapor/src/tests.rs
 expression: code.as_str()
 ---
 import { setInsertionState as _setInsertionState, createIf as _createIf, template as _template } from 'vue';
@@ -8,21 +8,21 @@ const t1 = _template("<i>b</i>")
 const t2 = _template("<section></section>", true)
 const t3 = _template("<div></div>", true)
 export function render(_ctx) {
-const n9 = t3()
-_setInsertionState(n9, null, true)
+const n1 = t3()
+_setInsertionState(n1, null, 0)
 const n0 = _createIf(() => (_ctx.ok), () => {
-const n8 = t2()
-_setInsertionState(n8, null, true)
-const n2 = _createIf(() => (_ctx.inner), () => {
-const n4 = t0()
-return n4
-})
-_setInsertionState(n8, null, true)
-const n5 = _createIf(() => (_ctx.more), () => {
-const n7 = t1()
+const n5 = t2()
+_setInsertionState(n5, null, 0)
+const n3 = _createIf(() => (_ctx.inner), () => {
+const n7 = t0()
 return n7
 })
-return n8
-})
+_setInsertionState(n5, null, 1)
+const n4 = _createIf(() => (_ctx.more), () => {
+const n9 = t1()
 return n9
+})
+return n5
+})
+return n1
 }
