@@ -233,8 +233,7 @@ pub struct IfIRNode<'a> {
     pub positive: BlockIRNode<'a>,
     pub negative: Option<NegativeBranch<'a>>,
     pub once: bool,
-    pub parent: Option<usize>,
-    pub anchor: Option<usize>,
+    pub insertion: Option<InsertionState>,
 }
 
 /// Negative branch of if
@@ -257,8 +256,23 @@ pub struct ForIRNode<'a> {
     pub once: bool,
     pub component: bool,
     pub only_child: bool,
-    pub parent: Option<usize>,
-    pub anchor: Option<usize>,
+    pub insertion: Option<InsertionState>,
+}
+
+/// Placement of a block operation among a parent's children.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InsertionState {
+    pub parent: usize,
+    pub anchor: InsertionAnchor,
+    pub logical_index: usize,
+}
+
+/// Client-side insertion mode for a block operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InsertionAnchor {
+    Prepend,
+    Before(usize),
+    Append,
 }
 
 /// Component kind for code generation
@@ -292,8 +306,7 @@ pub struct CreateComponentIRNode<'a> {
     pub is_expr: Option<Box<'a, SimpleExpressionNode<'a>>>,
     /// v-show expression to apply after component creation
     pub v_show: Option<Box<'a, SimpleExpressionNode<'a>>>,
-    pub parent: Option<usize>,
-    pub anchor: Option<usize>,
+    pub insertion: Option<InsertionState>,
 }
 
 /// IR slot
@@ -311,6 +324,7 @@ pub struct SlotOutletIRNode<'a> {
     pub name: Box<'a, SimpleExpressionNode<'a>>,
     pub props: Vec<'a, IRProp<'a>>,
     pub fallback: Option<BlockIRNode<'a>>,
+    pub insertion: Option<InsertionState>,
 }
 
 /// Get text child operation
@@ -324,7 +338,8 @@ pub struct GetTextChildIRNode {
 pub struct ChildRefIRNode {
     pub child_id: usize,
     pub parent_id: usize,
-    pub offset: usize,
+    pub element_index: usize,
+    pub logical_index: usize,
 }
 
 /// Next sibling reference operation (`_next` / `_nthChild` helper).
@@ -345,5 +360,5 @@ pub struct ChildRefIRNode {
 pub struct NextRefIRNode {
     pub child_id: usize,
     pub prev_id: usize,
-    pub offset: usize,
+    pub logical_index: usize,
 }

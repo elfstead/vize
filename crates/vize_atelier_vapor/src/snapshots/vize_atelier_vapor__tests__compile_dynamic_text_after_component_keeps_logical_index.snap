@@ -1,0 +1,15 @@
+---
+source: crates/vize_atelier_vapor/src/tests.rs
+expression: code.as_str()
+---
+import { resolveComponent as _resolveComponent, createComponentWithFallback as _createComponentWithFallback, child as _child, toDisplayString as _toDisplayString, setText as _setText, setInsertionState as _setInsertionState, renderEffect as _renderEffect, template as _template } from 'vue';
+const t0 = _template("<div> </div>", true)
+export function render(_ctx) {
+const n2 = t0()
+const n1 = _child(n2, 1)
+const _component_Comp = _resolveComponent("Comp")
+_setInsertionState(n2, 0)
+const n0 = _createComponentWithFallback(_component_Comp, null, null, true)
+_renderEffect(() => _setText(n1, _toDisplayString(_ctx.value)))
+return n2
+}

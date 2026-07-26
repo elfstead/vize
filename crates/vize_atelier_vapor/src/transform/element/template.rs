@@ -1,5 +1,6 @@
 //! Template string construction, escaping, and template-ref extraction.
 
+use super::child_layout::{ChildLayout, LayoutItem};
 use super::{
     BlockIRNode, Box, ElementNode, ElementType, ExpressionNode, OperationNode, PropNode,
     SetTemplateRefIRNode, SimpleExpressionNode, String, TemplateChildNode, TransformContext,
@@ -9,6 +10,14 @@ use vize_carton::ensure_sufficient_stack;
 
 /// Generate element template string (recursively includes static children)
 pub(crate) fn generate_element_template(el: &ElementNode<'_>) -> String {
+    let layout = ChildLayout::new(&el.children);
+    generate_element_template_with_layout(el, &layout)
+}
+
+pub(super) fn generate_element_template_with_layout(
+    el: &ElementNode<'_>,
+    layout: &ChildLayout<'_, '_>,
+) -> String {
     let mut template = cstr!("<{}", el.tag);
 
     // Collect dynamic binding names to skip their static counterparts
@@ -17,11 +26,11 @@ pub(crate) fn generate_element_template(el: &ElementNode<'_>) -> String {
         .iter()
         .filter_map(|p| {
             if let PropNode::Directive(dir) = p
-                && dir.name == "bind"
+                && dir.name.as_str() == "bind"
                 && let Some(ref arg) = dir.arg
                 && let ExpressionNode::Simple(key) = arg
             {
-                return Some(key.content);
+                return Some(key.content.as_str());
             }
             None
         })
@@ -30,10 +39,10 @@ pub(crate) fn generate_element_template(el: &ElementNode<'_>) -> String {
     // Add static attributes (skip those overridden by dynamic bindings)
     for prop in el.props.iter() {
         if let PropNode::Attribute(attr) = prop {
-            if is_runtime_only_attr(attr.name) {
+            if is_runtime_only_attr(attr.name.as_str()) {
                 continue;
             }
-            if dynamic_attrs.contains(attr.name) {
+            if dynamic_attrs.contains(attr.name.as_str()) {
                 continue;
             }
             if let Some(ref value) = attr.value {
@@ -44,45 +53,42 @@ pub(crate) fn generate_element_template(el: &ElementNode<'_>) -> String {
         }
     }
 
-    if is_void_element(el.tag) {
+    if is_void_element(&el.tag) {
         template.push('>');
     } else if el.is_self_closing {
         append!(template, "></{}>", el.tag);
     } else {
         template.push('>');
 
-        // Recursively add template-backed children. `<template>` is a
-        // transparent wrapper in Vapor just as it is in the main element
-        // dispatcher, so its children contribute directly to the enclosing
-        // element's static template instead of producing a component lookup.
-        append_child_templates(&mut template, &el.children);
+        for item in layout.items() {
+            match *item {
+                LayoutItem::Element { flat_index, .. } => {
+                    if let TemplateChildNode::Element(child) = layout.child(flat_index) {
+                        let child_template =
+                            ensure_sufficient_stack(|| generate_element_template(child));
+                        template.push_str(&child_template);
+                    }
+                }
+                LayoutItem::TextRun { start, end, .. } => {
+                    for child in layout.text_run(start, end) {
+                        match child {
+                            TemplateChildNode::Text(text) => {
+                                template.push_str(&escape_html_text(&text.content));
+                            }
+                            TemplateChildNode::Interpolation(_) => template.push(' '),
+                            _ => {}
+                        }
+                    }
+                }
+                LayoutItem::Anchor { .. } => template.push_str("<!>"),
+                LayoutItem::Inserted { .. } => {}
+            }
+        }
 
         append!(template, "</{}>", el.tag);
     }
 
     template
-}
-
-fn append_child_templates(template: &mut String, children: &[TemplateChildNode<'_>]) {
-    for child in children {
-        match child {
-            TemplateChildNode::Text(text) => {
-                template.push_str(&escape_html_text(text.content));
-            }
-            TemplateChildNode::Interpolation(_) => {
-                template.push(' ');
-            }
-            TemplateChildNode::Element(child_el) if child_el.tag_type == ElementType::Template => {
-                ensure_sufficient_stack(|| append_child_templates(template, &child_el.children));
-            }
-            TemplateChildNode::Element(child_el) if is_template_backed_element(child_el) => {
-                let child_template =
-                    ensure_sufficient_stack(|| generate_element_template(child_el));
-                template.push_str(&child_template);
-            }
-            _ => {}
-        }
-    }
 }
 
 /// Escape HTML special characters in text content (vuejs/core #14310)
@@ -103,7 +109,7 @@ pub(crate) fn escape_html_text(s: &str) -> String {
 
 /// Check if an element is static (no dynamic directives)
 pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
-    if !matches!(el.tag_type, ElementType::Element) {
+    if !matches!(el.tag_type, ElementType::Element) || el.tag.as_str() == "component" {
         return false;
     }
 
@@ -112,7 +118,7 @@ pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
     for prop in el.props.iter() {
         match prop {
             PropNode::Directive(_) => return false,
-            PropNode::Attribute(attr) if is_runtime_only_attr(attr.name) => return false,
+            PropNode::Attribute(attr) if is_runtime_only_attr(attr.name.as_str()) => return false,
             _ => {}
         }
     }
@@ -122,7 +128,7 @@ pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
         match child {
             TemplateChildNode::Interpolation(_) => return false,
             TemplateChildNode::Element(child_el) => {
-                if !ensure_sufficient_stack(|| is_static_element(child_el)) {
+                if !is_static_element(child_el) {
                     return false;
                 }
             }
@@ -132,10 +138,6 @@ pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
     }
 
     true
-}
-
-pub(super) fn is_template_backed_element(el: &ElementNode<'_>) -> bool {
-    matches!(el.tag_type, ElementType::Element)
 }
 
 pub(super) fn transform_template_ref<'a>(
@@ -163,24 +165,26 @@ fn extract_template_ref_value<'a>(
 ) -> Option<Box<'a, SimpleExpressionNode<'a>>> {
     for prop in el.props.iter() {
         match prop {
-            PropNode::Attribute(attr) if attr.name == "ref" => {
+            PropNode::Attribute(attr) if attr.name.as_str() == "ref" => {
                 let value = attr.value.as_ref()?;
-                let node = SimpleExpressionNode::new(value.content, true, value.loc.clone());
-                return Some(Box::new_in(node, &ctx.allocator));
+                let node =
+                    SimpleExpressionNode::new(value.content.clone(), true, value.loc.clone());
+                return Some(Box::new_in(node, ctx.allocator));
             }
-            PropNode::Directive(dir) if dir.name == "bind" => {
+            PropNode::Directive(dir) if dir.name.as_str() == "bind" => {
                 let Some(ExpressionNode::Simple(arg)) = dir.arg.as_ref() else {
                     continue;
                 };
-                if arg.content != "ref" {
+                if arg.content.as_str() != "ref" {
                     continue;
                 }
 
                 let Some(ExpressionNode::Simple(exp)) = dir.exp.as_ref() else {
                     continue;
                 };
-                let node = SimpleExpressionNode::from_node(exp);
-                return Some(Box::new_in(node, &ctx.allocator));
+                let node =
+                    SimpleExpressionNode::new(exp.content.clone(), exp.is_static, exp.loc.clone());
+                return Some(Box::new_in(node, ctx.allocator));
             }
             _ => {}
         }
@@ -193,7 +197,7 @@ fn has_static_ref_for(el: &ElementNode<'_>) -> bool {
     el.props.iter().any(|prop| {
         matches!(
             prop,
-            PropNode::Attribute(attr) if attr.name == "ref_for"
+            PropNode::Attribute(attr) if attr.name.as_str() == "ref_for"
         )
     })
 }

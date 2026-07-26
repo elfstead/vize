@@ -4,7 +4,7 @@
 
 use vize_carton::Box;
 
-use crate::ir::{BlockIRNode, ForIRNode, IfIRNode, NegativeBranch, OperationNode};
+use crate::ir::{BlockIRNode, ForIRNode, IfIRNode, InsertionState, NegativeBranch, OperationNode};
 use vize_atelier_core::{
     ExpressionNode, ForNode, IfNode, PropNode, SimpleExpressionNode, SourceLocation,
     TemplateChildNode,
@@ -25,25 +25,18 @@ pub(crate) fn transform_if_node_into_parent<'a>(
     ctx: &mut TransformContext<'a>,
     if_node: &IfNode<'a>,
     block: &mut BlockIRNode<'a>,
-    parent: usize,
+    id: usize,
+    insertion: InsertionState,
 ) {
-    transform_if_node_with_options(ctx, if_node, block, Some(parent), None, false);
-}
-
-pub(crate) fn transform_if_node_deferred_parent<'a>(
-    ctx: &mut TransformContext<'a>,
-    if_node: &IfNode<'a>,
-    block: &mut BlockIRNode<'a>,
-) {
-    transform_if_node_with_options(ctx, if_node, block, None, None, false);
+    transform_if_node_with_options(ctx, if_node, block, Some(id), Some(insertion), false);
 }
 
 fn transform_if_node_with_options<'a>(
     ctx: &mut TransformContext<'a>,
     if_node: &IfNode<'a>,
     block: &mut BlockIRNode<'a>,
-    parent: Option<usize>,
-    anchor: Option<usize>,
+    existing_id: Option<usize>,
+    insertion: Option<InsertionState>,
     add_return: bool,
 ) {
     if if_node.branches.is_empty() {
@@ -51,7 +44,7 @@ fn transform_if_node_with_options<'a>(
     }
 
     // Allocate ID for the if node itself
-    let if_id = ctx.next_id();
+    let if_id = existing_id.unwrap_or_else(|| ctx.next_id());
 
     // First branch is the v-if condition
     let first_branch = &if_node.branches[0];
@@ -86,12 +79,7 @@ fn transform_if_node_with_options<'a>(
 
     // Handle remaining branches (v-else-if, v-else)
     let negative = if if_node.branches.len() > 1 {
-        Some(transform_remaining_branches(
-            ctx,
-            &if_node.branches[1..],
-            parent,
-            anchor,
-        ))
+        Some(transform_remaining_branches(ctx, &if_node.branches[1..]))
     } else {
         None
     };
@@ -102,8 +90,7 @@ fn transform_if_node_with_options<'a>(
         positive,
         negative,
         once: false,
-        parent,
-        anchor,
+        insertion,
     };
 
     block
@@ -118,8 +105,6 @@ fn transform_if_node_with_options<'a>(
 pub(crate) fn transform_remaining_branches<'a>(
     ctx: &mut TransformContext<'a>,
     branches: &[vize_atelier_core::IfBranchNode<'a>],
-    parent: Option<usize>,
-    anchor: Option<usize>,
 ) -> NegativeBranch<'a> {
     if branches.is_empty() {
         // This shouldn't happen, but return an empty block just in case
@@ -155,12 +140,7 @@ pub(crate) fn transform_remaining_branches<'a>(
         let negative = if branches.len() > 1 {
             // Consume ID for negative branch callback block
             let _negative_block_id = ctx.next_id();
-            Some(transform_remaining_branches(
-                ctx,
-                &branches[1..],
-                parent,
-                anchor,
-            ))
+            Some(transform_remaining_branches(ctx, &branches[1..]))
         } else {
             None
         };
@@ -171,8 +151,7 @@ pub(crate) fn transform_remaining_branches<'a>(
             positive,
             negative,
             once: false,
-            parent,
-            anchor,
+            insertion: None,
         };
 
         NegativeBranch::If(Box::new_in(nested_if, &ctx.allocator))
@@ -196,29 +175,22 @@ pub(crate) fn transform_for_node_into_parent<'a>(
     ctx: &mut TransformContext<'a>,
     for_node: &ForNode<'a>,
     block: &mut BlockIRNode<'a>,
-    parent: usize,
+    id: usize,
+    insertion: InsertionState,
 ) {
-    transform_for_node_with_options(ctx, for_node, block, Some(parent), None, false);
-}
-
-pub(crate) fn transform_for_node_deferred_parent<'a>(
-    ctx: &mut TransformContext<'a>,
-    for_node: &ForNode<'a>,
-    block: &mut BlockIRNode<'a>,
-) {
-    transform_for_node_with_options(ctx, for_node, block, None, None, false);
+    transform_for_node_with_options(ctx, for_node, block, Some(id), Some(insertion), false);
 }
 
 fn transform_for_node_with_options<'a>(
     ctx: &mut TransformContext<'a>,
     for_node: &ForNode<'a>,
     block: &mut BlockIRNode<'a>,
-    parent: Option<usize>,
-    anchor: Option<usize>,
+    existing_id: Option<usize>,
+    insertion: Option<InsertionState>,
     add_return: bool,
 ) {
     // Allocate for-node ID first (before children consume IDs)
-    let for_id = ctx.next_id();
+    let for_id = existing_id.unwrap_or_else(|| ctx.next_id());
 
     // Get source expression
     let source = clone_simple_expr(ctx, &for_node.source);
@@ -261,8 +233,7 @@ fn transform_for_node_with_options<'a>(
         once: false,
         component: false,
         only_child: for_node.children.len() == 1,
-        parent,
-        anchor,
+        insertion,
     };
 
     block
