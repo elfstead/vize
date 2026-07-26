@@ -1,5 +1,7 @@
 //! Element transformation dispatch for Vapor IR lowering.
 
+#[path = "element/child_layout.rs"]
+mod child_layout;
 #[path = "element/component.rs"]
 mod component;
 #[path = "element/deferred.rs"]
@@ -10,8 +12,8 @@ mod template;
 use vize_carton::{Box, String, Vec, append, cstr};
 
 use crate::ir::{
-    BlockIRNode, ChildRefIRNode, ComponentKind, CreateComponentIRNode, IRProp, IRSlot,
-    NextRefIRNode, OperationNode, SetTemplateRefIRNode, SlotOutletIRNode,
+    BlockIRNode, ComponentKind, CreateComponentIRNode, IRProp, IRSlot, OperationNode,
+    SetTemplateRefIRNode, SlotOutletIRNode,
 };
 use vize_atelier_core::{
     ElementNode, ElementType, ExpressionNode, PropNode, SimpleExpressionNode, SourceLocation,
@@ -19,19 +21,15 @@ use vize_atelier_core::{
 };
 
 use self::{
+    child_layout::ChildLayout,
     component::transform_component,
-    deferred::{
-        transform_element_with_control_flow_children, transform_element_with_dynamic_children,
-    },
-    template::{generate_element_template, is_static_element, transform_template_ref},
+    deferred::transform_element_with_dynamic_children,
+    template::{generate_element_template, transform_template_ref},
 };
 
 use super::{
     context::TransformContext,
-    control::{
-        transform_for_node, transform_for_node_deferred_parent, transform_for_node_into_parent,
-        transform_if_node, transform_if_node_deferred_parent, transform_if_node_into_parent,
-    },
+    control::{transform_for_node, transform_if_node},
     directive::transform_directive,
     text::{transform_interpolation, transform_text, transform_text_children},
     transform_children,
@@ -82,31 +80,11 @@ pub(crate) fn transform_element<'a>(
 
     // Check if this element has non-static children that require
     // deferred ID allocation (so inner templates/IDs come first).
-    let has_control_flow_children = el.tag_type == ElementType::Element
-        && el
-            .children
-            .iter()
-            .any(|c| matches!(c, TemplateChildNode::If(_) | TemplateChildNode::For(_)));
-    let has_dynamic_element_children = el.tag_type == ElementType::Element
-        && !has_control_flow_children
-        && el.children.iter().any(
-            |c| matches!(c, TemplateChildNode::Element(child_el) if !is_static_element(child_el)),
-        );
+    let has_dynamic_children = el.tag_type == ElementType::Element
+        && ChildLayout::new(&el.children).has_dynamic_children();
 
-    if has_dynamic_element_children {
-        // Dynamic element children: allocate child IDs first, then parent ID.
-        // Use child/next navigation instead of separate templates.
+    if has_dynamic_children {
         transform_element_with_dynamic_children(ctx, el, block);
-        if entered_non_reactive {
-            ctx.exit_non_reactive_scope();
-        }
-        return;
-    }
-
-    if has_control_flow_children {
-        // Control flow children (v-if/v-for): defer parent ID and template
-        // allocation until after children, so inner IDs/templates come first.
-        transform_element_with_control_flow_children(ctx, el, block);
         if entered_non_reactive {
             ctx.exit_non_reactive_scope();
         }
@@ -116,7 +94,7 @@ pub(crate) fn transform_element<'a>(
     // Components handle their own ID allocation (slots consume IDs before the component)
     // Also handle <component :is="..."> (dynamic component) which the parser classifies as Element
     if el.tag_type == ElementType::Component || el.tag.as_str() == "component" {
-        transform_component(ctx, el, block, None, None, None, true);
+        transform_component(ctx, el, block, None, None, true);
         if entered_non_reactive {
             ctx.exit_non_reactive_scope();
         }
@@ -412,8 +390,7 @@ pub(crate) fn transform_element<'a>(
                 kind: crate::ir::ComponentKind::Regular,
                 is_expr: None,
                 v_show: None,
-                parent: None,
-                anchor: None,
+                insertion: None,
             };
 
             block
@@ -429,6 +406,7 @@ pub(crate) fn transform_element<'a>(
                 name,
                 props,
                 fallback,
+                insertion: None,
             };
 
             block.operation.push(OperationNode::SlotOutlet(slot_outlet));

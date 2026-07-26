@@ -149,6 +149,144 @@ fn test_compile_nested_component_child() {
 }
 
 #[test]
+fn test_compile_nested_components_use_logical_insertion_indices() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        "<header><Brand /><nav><Link /><Link /></nav><button @click=\"count++\">{{ count }}</button></header>",
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "Expected no errors: {:?}",
+        result.error_messages
+    );
+
+    let code = normalize_code(&result.code);
+    assert_eq!(code.matches("_setInsertionState(").count(), 3);
+    assert_eq!(
+        code.lines()
+            .filter(|line| line.starts_with("_setInsertionState(")
+                && line.ends_with(", 0)")
+                && !line.contains("null"))
+            .count(),
+        1
+    );
+    assert_eq!(code.matches(", null, 0)").count(), 1);
+    assert_eq!(code.matches(", null, 1)").count(), 1);
+    assert!(
+        code.lines()
+            .any(|line| line.contains(" = _child(") && line.ends_with(", 1)"))
+    );
+    assert!(
+        code.lines()
+            .any(|line| line.contains(" = _next(") && line.ends_with(", 2)"))
+    );
+}
+
+#[test]
+fn test_compile_middle_block_run_uses_one_anchor_and_distinct_dom_indices() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><span/><A/><B/><button :class="x"/></div>"#,
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "Expected no errors: {:?}",
+        result.error_messages
+    );
+
+    let code = normalize_code(&result.code);
+    assert!(code.contains("<div><span></span><!><button"));
+    assert!(code.contains("const n3 = _next(_child(n4), 1)"), "{code}");
+    assert!(code.contains("const n2 = _next(n3, 3)"), "{code}");
+    assert!(code.contains("_setInsertionState(n4, n3, 1)"), "{code}");
+    assert!(code.contains("_setInsertionState(n4, n3, 2)"), "{code}");
+    assert_eq!(code.matches("<!>").count(), 1);
+}
+
+#[test]
+fn test_compile_hydration_refs_keep_physical_and_logical_indices_distinct() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><Comp/><div/><span/><div v-if="true"/><div><button :disabled="foo"/></div></div>"#,
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "Expected no errors: {:?}",
+        result.error_messages
+    );
+
+    let code = normalize_code(&result.code);
+    assert!(code.contains("_nthChild(n4, 2, 3)"), "{code}");
+    assert!(code.contains("_next(n3, 4)"), "{code}");
+    assert!(code.contains("_setInsertionState(n4, 0)"), "{code}");
+    assert!(code.contains("_setInsertionState(n4, n3, 3)"), "{code}");
+}
+
+#[test]
+fn test_compile_all_dynamic_children_append_in_logical_order() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><Comp1/><div v-if="show">if</div><div v-else>else</div><Comp2/></div>"#,
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "Expected no errors: {:?}",
+        result.error_messages
+    );
+
+    let code = normalize_code(&result.code);
+    assert!(!code.contains("<!>"), "{code}");
+    assert!(code.contains("_setInsertionState(n3, null, 0)"), "{code}");
+    assert!(code.contains("_setInsertionState(n3, null, 1)"), "{code}");
+    assert!(code.contains("_setInsertionState(n3, null, 2)"), "{code}");
+}
+
+#[test]
+fn test_compile_middle_slot_and_control_flow_use_typed_insertion_state() {
+    let allocator = Bump::new();
+    for source in [
+        "<div><span/><slot/><button/></div>",
+        r#"<div><span/><template v-if="ok"><b/></template><button/></div>"#,
+        r#"<div><span/><template v-for="item in items"><b/></template><button/></div>"#,
+    ] {
+        let result = compile_vapor(&allocator, source, Default::default());
+        assert!(
+            result.error_messages.is_empty(),
+            "Expected no errors for {source}: {:?}",
+            result.error_messages
+        );
+
+        let code = normalize_code(&result.code);
+        assert!(code.contains("<div><span></span><!><button"), "{code}");
+        assert!(
+            code.lines()
+                .any(|line| line.starts_with("_setInsertionState(")
+                    && line.contains(", n")
+                    && line.ends_with(", 1)")),
+            "{code}"
+        );
+        assert!(
+            code.lines()
+                .filter(|line| line.starts_with("_setInsertionState("))
+                .all(|line| !line.contains("true")),
+            "{code}"
+        );
+    }
+}
+
+#[test]
 fn test_compile_nested_slot_outlet_child() {
     let allocator = Bump::new();
     let result = compile_vapor(
@@ -580,14 +718,14 @@ fn test_compile_v_for_destructured_aliases_resolve_source_paths() {
     assert!(
         result
             .code
-            .contains(r#"_setProp(n2, "title", _for_item0.value.user.name)"#),
+            .contains(r#""title", _for_item0.value.user.name)"#),
         "{}",
         result.code
     );
     assert!(
         result
             .code
-            .contains("_setText(x2, _toDisplayString(_for_item0.value.meta.count))"),
+            .contains("_toDisplayString(_for_item0.value.meta.count))"),
         "{}",
         result.code
     );
@@ -654,6 +792,7 @@ fn test_compile_dynamic_child_after_multiple_static_siblings() {
     );
 
     let code = normalize_code(&result.code);
+    assert!(!code.contains("child as _child"), "{code}");
     insta::assert_snapshot!(code.as_str());
 }
 

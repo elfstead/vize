@@ -259,8 +259,7 @@ pub(crate) fn transform_directive<'a>(
                     positive,
                     negative: None,
                     once: false,
-                    parent: None,
-                    anchor: None,
+                    insertion: None,
                 };
 
                 block
@@ -292,8 +291,7 @@ pub(crate) fn transform_directive<'a>(
                     once: false,
                     component: el.tag_type == ElementType::Component,
                     only_child: false,
-                    parent: None,
-                    anchor: None,
+                    insertion: None,
                 };
 
                 block

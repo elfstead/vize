@@ -6,16 +6,16 @@ import { txt as _txt, toDisplayString as _toDisplayString, setText as _setText, 
 const t0 = _template("<em class=\"weekend-label\">Weekend</em>", true)
 const t1 = _template("<span>  <em class=\"day-offset\">same day</em></span>", true)
 export function render(_ctx) {
-const n3 = t1()
-const x3 = _txt(n3)
-_setInsertionState(n3, null, true)
+const n1 = t1()
+const x1 = _txt(n1)
+_setInsertionState(n1, null, 2)
 const n0 = _createIf(() => (_ctx.isWeekend), () => {
-const n2 = t0()
-return n2
+const n3 = t0()
+return n3
 })
 _renderEffect(() => {
-_setClass(n3, ["date-line", { weekend: _ctx.isWeekend }])
-_setText(x3, _toDisplayString(_ctx.dateLabel) + " ")
+_setClass(n1, ["date-line", { weekend: _ctx.isWeekend }])
+_setText(x1, _toDisplayString(_ctx.dateLabel) + " ")
 })
-return n3
+return n1
 }

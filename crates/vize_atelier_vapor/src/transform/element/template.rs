@@ -1,5 +1,6 @@
 //! Template string construction, escaping, and template-ref extraction.
 
+use super::child_layout::ChildLayout;
 use super::{
     BlockIRNode, Box, ElementNode, ElementType, ExpressionNode, OperationNode, PropNode,
     SetTemplateRefIRNode, SimpleExpressionNode, String, TemplateChildNode, TransformContext,
@@ -50,9 +51,17 @@ pub(crate) fn generate_element_template(el: &ElementNode<'_>) -> String {
     } else {
         template.push('>');
 
-        // Recursively add template-backed children. Interpolations contribute a
-        // text placeholder while control-flow nodes are inserted at runtime.
-        for child in el.children.iter() {
+        // Recursively add template-backed children. Dynamic block runs between
+        // static nodes receive one comment anchor for deterministic insertion.
+        let layout = ChildLayout::new(&el.children);
+        let mut anchors = layout.anchors().iter().peekable();
+        for (flat_index, child) in layout.children().iter().enumerate() {
+            if anchors
+                .next_if(|anchor| anchor.before_flat_index == flat_index)
+                .is_some()
+            {
+                template.push_str("<!>");
+            }
             match child {
                 TemplateChildNode::Text(text) => {
                     template.push_str(&escape_html_text(&text.content));
@@ -93,7 +102,7 @@ pub(crate) fn escape_html_text(s: &str) -> String {
 
 /// Check if an element is static (no dynamic directives)
 pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
-    if !matches!(el.tag_type, ElementType::Element) {
+    if !matches!(el.tag_type, ElementType::Element) || el.tag.as_str() == "component" {
         return false;
     }
 
@@ -125,7 +134,7 @@ pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
 }
 
 pub(super) fn is_template_backed_element(el: &ElementNode<'_>) -> bool {
-    matches!(el.tag_type, ElementType::Element)
+    matches!(el.tag_type, ElementType::Element) && el.tag.as_str() != "component"
 }
 
 pub(super) fn transform_template_ref<'a>(
