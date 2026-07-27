@@ -39,6 +39,7 @@ define_compiler_option_inventory! {
     IsTs => ("isTs", "boolean"),
     CustomRenderer => ("customRenderer", "boolean"),
     CustomElements => ("customElements", "string[]"),
+    Comments => ("comments", "boolean"),
     TemplateSyntax => ("templateSyntax", r#""standard" | "strict" | "quirks""#),
     ExperimentalInTagComments => ("experimentalInTagComments", "boolean"),
     ExperimentalPatternedTemplate => ("experimentalPatternedTemplate", "boolean"),
@@ -125,6 +126,7 @@ pub(crate) fn parse_compiler_options(options: &JsValue) -> ParsedCompilerOptions
             is_ts: get_bool(CompilerOption::IsTs),
             custom_renderer: get_bool(CompilerOption::CustomRenderer),
             custom_elements: get_string_array(CompilerOption::CustomElements),
+            comments: get_bool(CompilerOption::Comments),
             template_syntax,
             experimental_in_tag_comments: get_bool(CompilerOption::ExperimentalInTagComments),
             experimental_patterned_template: get_bool(

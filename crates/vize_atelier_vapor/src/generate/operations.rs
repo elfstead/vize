@@ -11,6 +11,7 @@ mod events;
 mod for_loop;
 mod if_block;
 mod insertion;
+mod key;
 mod refs;
 mod slots;
 
@@ -26,6 +27,9 @@ pub(crate) fn generate_operation(
     element_template_map: &FxHashMap<usize, usize>,
 ) {
     match op {
+        OperationNode::SetBlockKey(set_key) => {
+            key::generate_set_block_key(ctx, set_key);
+        }
         OperationNode::SetProp(set_prop) => {
             dom::generate_set_prop(ctx, set_prop);
         }
@@ -58,6 +62,9 @@ pub(crate) fn generate_operation(
         }
         OperationNode::For(for_node) => {
             for_loop::generate_for(ctx, for_node, element_template_map);
+        }
+        OperationNode::Key(key_node) => {
+            key::generate_key(ctx, key_node, element_template_map);
         }
         OperationNode::CreateComponent(component) => {
             component::generate_create_component(ctx, component, element_template_map);

@@ -17,6 +17,8 @@ pub(crate) struct TransformContext<'a> {
     pub(crate) element_template_map: FxHashMap<usize, usize>,
     pub(crate) standalone_text_elements: FxHashSet<usize>,
     non_reactive_scopes: usize,
+    suppressed_key_transforms: usize,
+    suppressed_non_reactive_classification: usize,
     pub(crate) diagnostics: std::vec::Vec<String>,
 }
 
@@ -31,6 +33,8 @@ impl<'a> TransformContext<'a> {
             element_template_map: FxHashMap::default(),
             standalone_text_elements: FxHashSet::default(),
             non_reactive_scopes: 0,
+            suppressed_key_transforms: 0,
+            suppressed_non_reactive_classification: 0,
             diagnostics: std::vec::Vec::new(),
         }
     }
@@ -60,6 +64,28 @@ impl<'a> TransformContext<'a> {
 
     pub(crate) fn is_non_reactive(&self) -> bool {
         self.non_reactive_scopes > 0
+    }
+
+    pub(crate) fn suppress_next_key_transform(&mut self) {
+        self.suppressed_key_transforms += 1;
+    }
+
+    pub(crate) fn take_suppressed_key_transform(&mut self) -> bool {
+        let suppressed = self.suppressed_key_transforms > 0;
+        self.suppressed_key_transforms = self.suppressed_key_transforms.saturating_sub(1);
+        suppressed
+    }
+
+    pub(crate) fn suppress_next_non_reactive_classification(&mut self) {
+        self.suppressed_non_reactive_classification += 1;
+    }
+
+    pub(crate) fn take_suppressed_non_reactive_classification(&mut self) -> bool {
+        let suppressed = self.suppressed_non_reactive_classification > 0;
+        self.suppressed_non_reactive_classification = self
+            .suppressed_non_reactive_classification
+            .saturating_sub(1);
+        suppressed
     }
 
     pub(crate) fn push_dynamic_operation(

@@ -201,10 +201,14 @@ fn operation_has_template_refs(op: &OperationNode<'_>) -> bool {
                     .is_some_and(negative_branch_has_template_refs)
         }
         OperationNode::For(for_node) => block_has_template_refs(&for_node.render),
+        OperationNode::Key(key_node) => block_has_template_refs(&key_node.render),
         OperationNode::CreateComponent(component) => component
             .slots
             .iter()
             .any(|slot| block_has_template_refs(&slot.block)),
+        OperationNode::SlotOutlet(slot) => {
+            slot.fallback.as_ref().is_some_and(block_has_template_refs)
+        }
         _ => false,
     }
 }
@@ -287,8 +291,16 @@ fn collect_custom_directives_from_operation(
         OperationNode::For(for_node) => {
             collect_custom_directives_from_block(&for_node.render, directives);
         }
+        OperationNode::Key(key_node) => {
+            collect_custom_directives_from_block(&key_node.render, directives);
+        }
         OperationNode::CreateComponent(component) => {
             collect_custom_directives_from_component(component, directives);
+        }
+        OperationNode::SlotOutlet(slot) => {
+            if let Some(fallback) = &slot.fallback {
+                collect_custom_directives_from_block(fallback, directives);
+            }
         }
         _ => {}
     }

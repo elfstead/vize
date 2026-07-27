@@ -3,7 +3,7 @@
 use vize_atelier_core::{ElementType, TemplateChildNode};
 use vize_carton::ensure_sufficient_stack;
 
-use super::template::is_static_element;
+use super::{is_plain_element, key::has_dynamic_key, template::is_static_element};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct AnchorSlot(usize);
@@ -35,6 +35,9 @@ pub(super) enum LayoutItem {
         element_index: usize,
         logical_index: usize,
         dynamic: bool,
+    },
+    Comment {
+        flat_index: usize,
     },
     Inserted {
         flat_index: usize,
@@ -76,10 +79,11 @@ pub(super) struct ChildLayout<'node, 'alloc> {
     children: std::vec::Vec<&'node TemplateChildNode<'alloc>>,
     items: std::vec::Vec<LayoutItem>,
     anchor_count: usize,
+    process_dynamic_keys: bool,
 }
 
 impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
-    pub fn new(children: &'node [TemplateChildNode<'alloc>]) -> Self {
+    pub fn new(children: &'node [TemplateChildNode<'alloc>], process_dynamic_keys: bool) -> Self {
         let mut flat_children = std::vec::Vec::new();
         flatten_children(children, &mut flat_children);
 
@@ -87,6 +91,7 @@ impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
             children: flat_children,
             items: std::vec::Vec::new(),
             anchor_count: 0,
+            process_dynamic_keys,
         };
         layout.analyze();
         layout
@@ -114,6 +119,10 @@ impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
 
     pub fn anchor_count(&self) -> usize {
         self.anchor_count
+    }
+
+    pub fn process_dynamic_keys(&self) -> bool {
+        self.process_dynamic_keys
     }
 
     pub fn parent_text_run(&self) -> Option<(usize, usize)> {
@@ -151,7 +160,9 @@ impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
             match child {
                 TemplateChildNode::Element(element)
                     if element.tag_type != ElementType::Element
-                        || element.tag.as_str() == "component" =>
+                        || matches!(element.tag.as_str(), "component" | "Component")
+                        || is_plain_element(element)
+                        || (self.process_dynamic_keys && has_dynamic_key(element)) =>
                 {
                     pending_insertions.push(PendingInsertion {
                         flat_index,
@@ -208,6 +219,16 @@ impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
                         element_index += 1;
                         logical_index += 1;
                     }
+                }
+                TemplateChildNode::Comment(_) => {
+                    self.flush_insertions(
+                        &mut pending_insertions,
+                        &mut element_index,
+                        Some(flat_index),
+                    );
+                    self.items.push(LayoutItem::Comment { flat_index });
+                    element_index += 1;
+                    logical_index += 1;
                 }
                 _ => {}
             }

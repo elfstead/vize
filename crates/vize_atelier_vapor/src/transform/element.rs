@@ -6,6 +6,8 @@ mod child_layout;
 mod component;
 #[path = "element/deferred.rs"]
 mod deferred;
+#[path = "element/key.rs"]
+mod key;
 #[path = "element/template.rs"]
 mod template;
 
@@ -13,17 +15,18 @@ use vize_carton::{Box, String, Vec, append, cstr, ensure_sufficient_stack};
 
 use crate::ir::{
     BlockIRNode, ComponentKind, CreateComponentIRNode, IRProp, IRSlot, OperationNode,
-    SetTemplateRefIRNode, SlotOutletIRNode,
+    SetBlockKeyIRNode, SetTemplateRefIRNode, SlotOutletIRNode,
 };
 use vize_atelier_core::{
-    ElementNode, ElementType, ExpressionNode, PropNode, SimpleExpressionNode, SourceLocation,
-    TemplateChildNode,
+    CommentNode, ElementNode, ElementType, ExpressionNode, PropNode, SimpleExpressionNode,
+    SourceLocation, TemplateChildNode,
 };
 
 use self::{
     child_layout::ChildLayout,
     component::transform_component,
     deferred::{transform_element_runtime_work, transform_element_with_dynamic_children},
+    key::{has_dynamic_key, static_key_expression, transform_keyed_element},
     template::generate_element_template_with_layout,
 };
 
@@ -40,7 +43,11 @@ pub(crate) fn transform_element<'a>(
     el: &ElementNode<'a>,
     block: &mut BlockIRNode<'a>,
 ) {
-    let non_reactive = classify_non_reactive_directive(el);
+    let non_reactive = if ctx.take_suppressed_non_reactive_classification() {
+        NonReactiveDirective::default()
+    } else {
+        classify_non_reactive_directive(el)
+    };
     if let Some(ref memo_error) = non_reactive.memo_error {
         ctx.push_diagnostic(memo_error.clone());
     }
@@ -48,6 +55,7 @@ pub(crate) fn transform_element<'a>(
     if entered_non_reactive {
         ctx.enter_non_reactive_scope();
     }
+    let process_current_key = !ctx.take_suppressed_key_transform() && !ctx.is_non_reactive();
 
     // Template elements don't consume an ID - they just wrap children
     if el.tag_type == ElementType::Template {
@@ -80,8 +88,20 @@ pub(crate) fn transform_element<'a>(
     // Components handle their own ID allocation (slots consume IDs before the component).
     // The parser classifies `<component :is>` as an element, so dispatch it
     // before native child-layout analysis.
-    if el.tag_type == ElementType::Component || el.tag.as_str() == "component" {
-        transform_component(ctx, el, block, None, None, true);
+    if process_current_key && has_dynamic_key(el) {
+        transform_keyed_element(ctx, el, block, None, None, true);
+        if entered_non_reactive {
+            ctx.exit_non_reactive_scope();
+        }
+        return;
+    }
+
+    if el.tag_type == ElementType::Component
+        || matches!(el.tag.as_str(), "component" | "Component")
+        || is_plain_element(el)
+    {
+        let element_id = transform_component(ctx, el, block, None, None, true);
+        emit_static_key(ctx, el, element_id, block);
         if entered_non_reactive {
             ctx.exit_non_reactive_scope();
         }
@@ -90,21 +110,24 @@ pub(crate) fn transform_element<'a>(
 
     // Check if this element has non-static children that require
     // deferred ID allocation (so inner templates/IDs come first).
-    let child_layout =
-        (el.tag_type == ElementType::Element).then(|| ChildLayout::new(&el.children));
+    let child_layout = (el.tag_type == ElementType::Element)
+        .then(|| ChildLayout::new(&el.children, !ctx.is_non_reactive()));
     let has_dynamic_children = child_layout
         .as_ref()
         .is_some_and(ChildLayout::has_dynamic_children);
 
     if has_dynamic_children {
-        transform_element_with_dynamic_children(
+        let element_id = transform_element_with_dynamic_children(
             ctx,
             el,
             child_layout
                 .as_ref()
                 .expect("native elements have a child layout"),
             block,
+            None,
+            true,
         );
+        emit_static_key(ctx, el, element_id, block);
         if entered_non_reactive {
             ctx.exit_non_reactive_scope();
         }
@@ -403,6 +426,7 @@ pub(crate) fn transform_element<'a>(
         }
     }
 
+    emit_static_key(ctx, el, element_id, block);
     block.returns.push(element_id);
 
     if entered_non_reactive {
@@ -410,6 +434,132 @@ pub(crate) fn transform_element<'a>(
     }
 }
 
+pub(super) fn transform_existing_element<'a>(
+    ctx: &mut TransformContext<'a>,
+    el: &ElementNode<'a>,
+    element_id: usize,
+    insertion: Option<crate::ir::InsertionState>,
+    block: &mut BlockIRNode<'a>,
+) {
+    let non_reactive = if ctx.take_suppressed_non_reactive_classification() {
+        NonReactiveDirective::default()
+    } else {
+        classify_non_reactive_directive(el)
+    };
+    if let Some(ref memo_error) = non_reactive.memo_error {
+        ctx.push_diagnostic(memo_error.clone());
+    }
+    let entered_non_reactive = non_reactive.should_lower_as_once;
+    if entered_non_reactive {
+        ctx.enter_non_reactive_scope();
+    }
+    let process_current_key = !ctx.take_suppressed_key_transform() && !ctx.is_non_reactive();
+
+    if process_current_key && has_dynamic_key(el) {
+        transform_keyed_element(ctx, el, block, Some(element_id), insertion, false);
+    } else if el.tag_type == ElementType::Component
+        || matches!(el.tag.as_str(), "component" | "Component")
+        || is_plain_element(el)
+    {
+        transform_component(ctx, el, block, Some(element_id), insertion, false);
+        emit_static_key(ctx, el, element_id, block);
+    } else if el.tag_type == ElementType::Slot {
+        let name = get_slot_outlet_name(ctx, el);
+        let props = get_slot_outlet_props(ctx, el);
+        let fallback = (!el.children.is_empty()).then(|| transform_children(ctx, &el.children));
+        block
+            .operation
+            .push(OperationNode::SlotOutlet(SlotOutletIRNode {
+                id: element_id,
+                name,
+                props,
+                fallback,
+                insertion,
+            }));
+        emit_static_key(ctx, el, element_id, block);
+    } else if el.tag_type == ElementType::Element {
+        let layout = ChildLayout::new(&el.children, !ctx.is_non_reactive());
+        if layout.has_dynamic_children() {
+            transform_element_with_dynamic_children(
+                ctx,
+                el,
+                &layout,
+                block,
+                Some(element_id),
+                false,
+            );
+        } else {
+            transform_element_runtime_work(ctx, el, &layout, element_id, block);
+        }
+        emit_static_key(ctx, el, element_id, block);
+    } else if el.tag_type == ElementType::Template {
+        for child in el.children.iter() {
+            if let TemplateChildNode::Element(child) = child {
+                transform_element(ctx, child, block);
+            }
+        }
+    }
+
+    if entered_non_reactive {
+        ctx.exit_non_reactive_scope();
+    }
+}
+
+pub(super) fn transform_element_without_key<'a>(
+    ctx: &mut TransformContext<'a>,
+    el: &ElementNode<'a>,
+    block: &mut BlockIRNode<'a>,
+    existing_id: Option<usize>,
+    insertion: Option<crate::ir::InsertionState>,
+    add_return: bool,
+) {
+    ctx.suppress_next_key_transform();
+    ctx.suppress_next_non_reactive_classification();
+    if let Some(element_id) = existing_id {
+        transform_existing_element(ctx, el, element_id, insertion, block);
+    } else {
+        transform_element(ctx, el, block);
+        if !add_return {
+            block.returns.pop();
+        }
+    }
+}
+
+pub(super) fn is_plain_element(el: &ElementNode<'_>) -> bool {
+    el.tag_type == ElementType::Element && el.tag.as_str() == "template"
+}
+
+pub(crate) fn transform_comment<'a>(
+    ctx: &mut TransformContext<'a>,
+    comment: &CommentNode,
+    block: &mut BlockIRNode<'a>,
+) {
+    let element_id = ctx.next_id();
+    let mut template = cstr!("<!--");
+    template.push_str(&self::template::escape_html_text(&comment.content));
+    template.push_str("-->");
+    ctx.add_template(element_id, template);
+    block.returns.push(element_id);
+}
+
+fn emit_static_key<'a>(
+    ctx: &TransformContext<'a>,
+    el: &ElementNode<'a>,
+    element_id: usize,
+    block: &mut BlockIRNode<'a>,
+) {
+    let Some(value) = static_key_expression(ctx, el) else {
+        return;
+    };
+    block
+        .operation
+        .push(OperationNode::SetBlockKey(SetBlockKeyIRNode {
+            element: element_id,
+            value,
+        }));
+}
+
+#[derive(Default)]
 struct NonReactiveDirective {
     should_lower_as_once: bool,
     memo_error: Option<String>,

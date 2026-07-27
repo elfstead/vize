@@ -145,11 +145,11 @@ catalogs:
     "@vue/test-utils": "2.4.10"
     vue-router: "4.5.1"
 
-  # Vue beta track used by the playground and benchmark harnesses.
+  # Vue prerelease track used by the playground and benchmark harnesses.
   vue-beta:
-    vue: "3.6.0-beta.10"
-    "@vue/compiler-sfc": "3.6.0-beta.10"
-    "@vue/compiler-vapor": "3.6.0-beta.10"
+    vue: "3.6.0-rc.2"
+    "@vue/compiler-sfc": "3.6.0-rc.2"
+    "@vue/compiler-vapor": "3.6.0-rc.2"
 
   # Test runners and browser automation.
   testing:

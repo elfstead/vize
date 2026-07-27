@@ -39,6 +39,7 @@ pub(crate) fn compile_template_block_vapor(
         ssr: false,
         binding_metadata: bindings.cloned(),
         custom_renderer: options.custom_renderer,
+        comments: compiler_options.is_some_and(|opts| opts.comments),
         experimental_in_tag_comments: compiler_options
             .is_some_and(|opts| opts.experimental_in_tag_comments),
         experimental_patterned_template: compiler_options

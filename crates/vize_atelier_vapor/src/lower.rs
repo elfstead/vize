@@ -20,7 +20,7 @@ use vize_atelier_core::{RootNode, TemplateChildNode};
 
 use context::TransformContext;
 use control::{transform_for_node, transform_if_node};
-use element::transform_element;
+use element::{transform_comment, transform_element};
 use text::{transform_interpolation, transform_text};
 
 /// Transform AST to Vapor IR
@@ -113,8 +113,8 @@ pub(crate) fn transform_children<'a>(
             TemplateChildNode::For(for_node) => {
                 transform_for_node(ctx, for_node, &mut block);
             }
-            TemplateChildNode::Comment(_) => {
-                // Comments are ignored in Vapor mode
+            TemplateChildNode::Comment(comment) => {
+                transform_comment(ctx, comment, &mut block);
             }
             _ => {}
         }

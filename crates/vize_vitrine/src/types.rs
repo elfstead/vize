@@ -51,6 +51,9 @@ pub struct CompilerOptions {
     /// Tag patterns that compile as custom elements instead of Vue components.
     #[serde(default)]
     pub custom_elements: Option<Vec<String>>,
+    /// Whether to preserve HTML comments.
+    #[serde(default)]
+    pub comments: Option<bool>,
     /// Template syntax compatibility mode: "standard", "strict", or "quirks".
     #[serde(default)]
     pub template_syntax: Option<String>,

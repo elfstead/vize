@@ -215,6 +215,9 @@ fn transform_for_node_with_options<'a>(
 
     // Extract :key from the first child element's props
     let key_prop = extract_key_prop(ctx, for_node);
+    if key_prop.is_some() {
+        ctx.suppress_next_key_transform();
+    }
 
     // Consume ID for the render block
     let _render_block_id = ctx.next_id();

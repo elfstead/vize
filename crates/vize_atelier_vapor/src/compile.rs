@@ -26,6 +26,8 @@ pub struct VaporCompilerOptions {
     pub inline: bool,
     /// Whether the template targets a custom renderer instead of the DOM.
     pub custom_renderer: bool,
+    /// Whether to preserve HTML comments in client templates.
+    pub comments: bool,
     /// Enable experimental Vue in-tag comments (`// ...`) inside opening tags.
     pub experimental_in_tag_comments: bool,
     /// Enable experimental `v-match` / `v-case` patterned template desugaring.
@@ -192,6 +194,7 @@ fn compile_vapor_inner_with_stack<'a>(
         is_void_tag: vize_carton::is_void_tag,
         is_native_tag: Some(vize_carton::is_native_tag),
         custom_renderer: options.custom_renderer,
+        comments: options.comments,
         experimental_in_tag_comments: options.experimental_in_tag_comments,
         is_pre_tag: |tag| tag == "pre",
         get_namespace,
