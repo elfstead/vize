@@ -22,13 +22,14 @@ pub(super) fn transform_component<'a>(
     existing_id: Option<usize>,
     insertion: Option<InsertionState>,
     add_return: bool,
-) {
+) -> usize {
     let tag = el.tag.as_str();
     let kind = match tag {
+        "template" if el.tag_type == ElementType::Element => ComponentKind::PlainElement,
         "Teleport" => ComponentKind::Teleport,
         "KeepAlive" => ComponentKind::KeepAlive,
         "Suspense" => ComponentKind::Suspense,
-        "component" => ComponentKind::Dynamic,
+        "component" | "Component" => ComponentKind::Dynamic,
         _ => ComponentKind::Regular,
     };
 
@@ -77,17 +78,26 @@ pub(super) fn transform_component<'a>(
                 if dir.name.as_str() == "bind" {
                     if let Some(ref arg) = dir.arg {
                         if let ExpressionNode::Simple(key_exp) = arg {
+                            if key_exp.content.as_str() == "key" {
+                                continue;
+                            }
                             if kind == ComponentKind::Dynamic && key_exp.content.as_str() == "is" {
-                                if let Some(ref exp) = dir.exp
-                                    && let ExpressionNode::Simple(val_exp) = exp
+                                let node = if let Some(ExpressionNode::Simple(val_exp)) =
+                                    dir.exp.as_ref()
                                 {
-                                    let node = SimpleExpressionNode::new(
+                                    SimpleExpressionNode::new(
                                         val_exp.content.clone(),
                                         val_exp.is_static,
                                         val_exp.loc.clone(),
-                                    );
-                                    is_expr = Some(Box::new_in(node, ctx.allocator));
-                                }
+                                    )
+                                } else {
+                                    SimpleExpressionNode::new(
+                                        key_exp.content.clone(),
+                                        false,
+                                        key_exp.loc.clone(),
+                                    )
+                                };
+                                is_expr = Some(Box::new_in(node, ctx.allocator));
                                 continue;
                             }
                             let key_node = SimpleExpressionNode::new(
@@ -174,6 +184,20 @@ pub(super) fn transform_component<'a>(
                 }
             }
             PropNode::Attribute(attr) => {
+                if kind == ComponentKind::Dynamic && attr.name.as_str() == "is" {
+                    if let Some(value) = attr.value.as_ref() {
+                        let node = SimpleExpressionNode::new(
+                            value.content.clone(),
+                            true,
+                            value.loc.clone(),
+                        );
+                        is_expr = Some(Box::new_in(node, ctx.allocator));
+                    }
+                    continue;
+                }
+                if attr.name.as_str() == "key" {
+                    continue;
+                }
                 let key_node =
                     SimpleExpressionNode::new(attr.name.clone(), true, SourceLocation::STUB);
                 let key = Box::new_in(key_node, ctx.allocator);
@@ -280,7 +304,7 @@ pub(super) fn transform_component<'a>(
         props,
         slots,
         asset: kind == ComponentKind::Regular || kind == ComponentKind::Suspense,
-        once: false,
+        once: ctx.is_non_reactive(),
         dynamic_slots: has_dynamic_slot,
         kind,
         is_expr,
@@ -294,6 +318,7 @@ pub(super) fn transform_component<'a>(
     if add_return {
         block.returns.push(element_id);
     }
+    element_id
 }
 
 /// Transform v-model on component (helper for transform_component)

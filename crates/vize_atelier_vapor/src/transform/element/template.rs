@@ -7,12 +7,6 @@ use super::{
     append, cstr,
 };
 
-/// Generate element template string (recursively includes static children)
-pub(crate) fn generate_element_template(el: &ElementNode<'_>) -> String {
-    let layout = ChildLayout::new(&el.children);
-    generate_element_template_with_layout(el, &layout)
-}
-
 pub(super) fn generate_element_template_with_layout(
     el: &ElementNode<'_>,
     layout: &ChildLayout<'_, '_>,
@@ -38,7 +32,7 @@ pub(super) fn generate_element_template_with_layout(
     // Add static attributes (skip those overridden by dynamic bindings)
     for prop in el.props.iter() {
         if let PropNode::Attribute(attr) = prop {
-            if is_runtime_only_attr(attr.name.as_str()) {
+            if is_runtime_only_attr(attr.name.as_str()) || attr.name.as_str() == "key" {
                 continue;
             }
             if dynamic_attrs.contains(attr.name.as_str()) {
@@ -63,7 +57,10 @@ pub(super) fn generate_element_template_with_layout(
             match *item {
                 LayoutItem::Element { flat_index, .. } => {
                     if let TemplateChildNode::Element(child) = layout.child(flat_index) {
-                        template.push_str(&generate_element_template(child));
+                        let child_layout =
+                            ChildLayout::new(&child.children, layout.process_dynamic_keys());
+                        template
+                            .push_str(&generate_element_template_with_layout(child, &child_layout));
                     }
                 }
                 LayoutItem::TextRun { start, end, .. } => {
@@ -79,6 +76,13 @@ pub(super) fn generate_element_template_with_layout(
                 }
                 LayoutItem::Anchor { .. } => template.push_str("<!>"),
                 LayoutItem::Inserted { .. } => {}
+                LayoutItem::Comment { flat_index, .. } => {
+                    if let TemplateChildNode::Comment(comment) = layout.child(flat_index) {
+                        template.push_str("<!--");
+                        template.push_str(&escape_html_text(&comment.content));
+                        template.push_str("-->");
+                    }
+                }
             }
         }
 
@@ -106,7 +110,9 @@ pub(crate) fn escape_html_text(s: &str) -> String {
 
 /// Check if an element is static (no dynamic directives)
 pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
-    if !matches!(el.tag_type, ElementType::Element) || el.tag.as_str() == "component" {
+    if !matches!(el.tag_type, ElementType::Element)
+        || matches!(el.tag.as_str(), "component" | "Component")
+    {
         return false;
     }
 

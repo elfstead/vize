@@ -1,6 +1,6 @@
 //! Integration tests for the Vapor compiler entry points.
 
-use super::{compile_vapor, compile_vapor_with_template_syntax};
+use super::{VaporCompilerOptions, compile_vapor, compile_vapor_with_template_syntax};
 use oxc_allocator::Allocator;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
@@ -1053,6 +1053,24 @@ fn test_compile_slot_outlet_preserves_dynamic_name() {
 }
 
 #[test]
+fn test_compile_slot_fallback_collects_nested_delegate_events() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<slot><button @click="handler"/></slot>"#,
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "Expected no errors: {:?}",
+        result.error_messages
+    );
+    assert_parses_as_module(&result.code);
+    assert!(result.code.contains(r#"_delegateEvents("click")"#));
+}
+
+#[test]
 fn test_compile_custom_directive_preserves_payloads() {
     let allocator = Bump::new();
     let result = compile_vapor(
@@ -1115,6 +1133,29 @@ fn test_compile_v_once_lowers_without_runtime_directives() {
 }
 
 #[test]
+fn test_compile_nested_v_once_uses_shared_non_reactive_lowering() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><span v-once :class="value"/></div>"#,
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "{:?}",
+        result.error_messages
+    );
+    assert_parses_as_module(&result.code);
+    assert!(
+        result.code.contains("_setClass(n0, _ctx.value)"),
+        "{}",
+        result.code
+    );
+    assert!(!result.code.contains("_renderEffect"), "{}", result.code);
+}
+
+#[test]
 fn test_compile_v_memo_empty_array_lowers_without_runtime_directives() {
     let allocator = Bump::new();
     let result = compile_vapor(
@@ -1154,4 +1195,172 @@ fn test_compile_v_memo_with_dependencies_reports_diagnostic() {
     assert_parses_as_module(&result.code);
     assert!(!result.code.contains("_withDirectives"), "{}", result.code);
     assert!(!result.code.contains("_memo"), "{}", result.code);
+}
+
+#[test]
+fn test_compile_nested_v_memo_reports_diagnostic() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><span v-memo="[value]" :class="value"/></div>"#,
+        Default::default(),
+    );
+
+    assert_eq!(result.error_messages.len(), 1);
+    assert!(
+        result.error_messages[0].contains("v-memo with dependencies"),
+        "{:?}",
+        result.error_messages
+    );
+}
+
+#[test]
+fn test_compile_nested_keyed_v_memo_reports_one_diagnostic() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><span :key="id" v-memo="[value]" :class="value"/></div>"#,
+        Default::default(),
+    );
+
+    assert_eq!(
+        result.error_messages.len(),
+        1,
+        "{:?}",
+        result.error_messages
+    );
+    assert!(
+        result.error_messages[0].contains("v-memo with dependencies"),
+        "{:?}",
+        result.error_messages
+    );
+    assert_eq!(result.code.matches("_createKeyedFragment").count(), 2);
+    assert_parses_as_module(&result.code);
+}
+
+#[test]
+fn test_compile_native_template_uses_plain_element_creation() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><template><span :class="value"/></template></div>"#,
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "{:?}",
+        result.error_messages
+    );
+    assert_parses_as_module(&result.code);
+    assert!(
+        result
+            .code
+            .contains(r#"_createPlainElement("template", null, {"#),
+        "{}",
+        result.code
+    );
+    assert!(
+        !result.code.contains("const n2 = _child(n0)"),
+        "{}",
+        result.code
+    );
+}
+
+#[test]
+fn test_compile_dynamic_key_uses_keyed_fragment() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><span :key="id" :class="value"/></div>"#,
+        Default::default(),
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "{:?}",
+        result.error_messages
+    );
+    assert_parses_as_module(&result.code);
+    assert!(
+        result
+            .code
+            .contains("_createKeyedFragment(() => (_ctx.id), () => {"),
+        "{}",
+        result.code
+    );
+    assert!(
+        !result
+            .templates
+            .iter()
+            .any(|template| template.contains("key="))
+    );
+}
+
+#[test]
+fn test_compile_static_key_uses_block_key_without_rendering_attribute() {
+    let allocator = Bump::new();
+    let result = compile_vapor(&allocator, r#"<div key="stable"/>"#, Default::default());
+
+    assert!(
+        result.error_messages.is_empty(),
+        "{:?}",
+        result.error_messages
+    );
+    assert_parses_as_module(&result.code);
+    assert!(result.code.contains(r#"_setBlockKey(n0, "stable")"#));
+    assert_eq!(result.templates, vec![String::from("<div></div>")]);
+}
+
+#[test]
+fn test_compile_preserved_comment_counts_for_hydration_refs() {
+    let allocator = Bump::new();
+    let result = compile_vapor(
+        &allocator,
+        r#"<div><!--keep--><span :class="value"/></div>"#,
+        VaporCompilerOptions {
+            comments: true,
+            ..Default::default()
+        },
+    );
+
+    assert!(
+        result.error_messages.is_empty(),
+        "{:?}",
+        result.error_messages
+    );
+    assert_parses_as_module(&result.code);
+    assert_eq!(
+        result.templates,
+        vec![String::from("<div><!--keep--><span></span></div>")]
+    );
+    assert!(
+        result.code.contains("_next(_child(n1), 1)"),
+        "{}",
+        result.code
+    );
+}
+
+#[test]
+fn test_compile_dynamic_component_selector_forms() {
+    let allocator = Bump::new();
+    let static_result = compile_vapor(&allocator, r#"<component is="Foo"/>"#, Default::default());
+    let shorthand_result = compile_vapor(&allocator, r#"<component :is/>"#, Default::default());
+
+    assert!(
+        static_result
+            .code
+            .contains(r#"_createComponentWithFallback(_resolveDynamicComponent("Foo")"#),
+        "{}",
+        static_result.code
+    );
+    assert!(
+        shorthand_result
+            .code
+            .contains("_createDynamicComponent(() => (_ctx.is)"),
+        "{}",
+        shorthand_result.code
+    );
+    assert_parses_as_module(&static_result.code);
+    assert_parses_as_module(&shorthand_result.code);
 }

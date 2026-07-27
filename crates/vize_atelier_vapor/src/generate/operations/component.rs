@@ -2,8 +2,10 @@ use crate::ir::{ComponentKind, CreateComponentIRNode, IRSlot, OperationNode};
 use vize_carton::{FxHashMap, String, ToCompactString, cstr};
 
 use super::{
-    super::context::GenerateContext, component_props::generate_component_props_str,
-    component_slots::generate_slot_fn, insertion::emit_insertion_state,
+    super::{context::GenerateContext, setup::escape_js_string_literal},
+    component_props::generate_component_props_str,
+    component_slots::generate_slot_fn,
+    insertion::emit_insertion_state,
 };
 
 pub(super) fn component_resolution_var(tag: &str) -> String {
@@ -29,7 +31,7 @@ pub(super) fn emit_component_resolution(ctx: &mut GenerateContext, component_var
     ctx.push_line(&cstr!(
         "const {} = _resolveComponent(\"{}\")",
         component_var,
-        tag
+        escape_js_string_literal(tag)
     ));
 }
 
@@ -69,14 +71,33 @@ pub(super) fn generate_create_component(
     // Determine component variable and creation function based on kind
     let (component_var, create_fn): (String, &str) = match kind {
         ComponentKind::Dynamic => {
-            ctx.use_helper("createDynamicComponent");
-            let is_arg = if let Some(ref is_exp) = component.is_expr {
+            if let Some(ref is_exp) = component.is_expr
+                && is_exp.is_static
+            {
+                ctx.use_helper("resolveDynamicComponent");
+                ctx.use_helper("createComponentWithFallback");
+                (
+                    cstr!(
+                        "_resolveDynamicComponent(\"{}\")",
+                        escape_js_string_literal(is_exp.content.as_str())
+                    ),
+                    "createComponentWithFallback",
+                )
+            } else if let Some(ref is_exp) = component.is_expr {
+                ctx.use_helper("createDynamicComponent");
                 let resolved = ctx.resolve_expression(is_exp.content.as_str());
-                cstr!("() => ({})", resolved)
+                (cstr!("() => ({})", resolved), "createDynamicComponent")
             } else {
-                "null".to_compact_string()
-            };
-            (is_arg, "createDynamicComponent")
+                ctx.use_helper("createDynamicComponent");
+                ("null".to_compact_string(), "createDynamicComponent")
+            }
+        }
+        ComponentKind::PlainElement => {
+            ctx.use_helper("createPlainElement");
+            (
+                cstr!("\"{}\"", escape_js_string_literal(tag.as_str())),
+                "createPlainElement",
+            )
         }
         ComponentKind::Teleport => {
             ctx.use_helper("VaporTeleport");
@@ -116,7 +137,7 @@ pub(super) fn generate_create_component(
     // Check if this is a simple inner component (pre-resolved, no props, no slots)
     // In that case, emit simplified call: _createComponentWithFallback(_component_Foo)
     let is_pre_resolved = was_already_resolved;
-    if is_pre_resolved && !has_slots && props == "null" {
+    if is_pre_resolved && !has_slots && props == "null" && !component.once {
         ctx.push_line(&cstr!(
             "const n{} = _{}({})",
             component.id,
@@ -152,7 +173,10 @@ pub(super) fn generate_create_component(
 
         for (i, slot) in static_slots.iter().enumerate() {
             ctx.push_indent();
-            ctx.push(&cstr!("\"{}\":", slot.name.content));
+            ctx.push(&cstr!(
+                "\"{}\":",
+                escape_js_string_literal(slot.name.content.as_str())
+            ));
             generate_slot_fn(ctx, slot, element_template_map, use_with_vapor_ctx);
             if i < static_slots.len() - 1 || !dynamic_slots.is_empty() {
                 ctx.push(",");
@@ -188,9 +212,17 @@ pub(super) fn generate_create_component(
 
         ctx.deindent();
         ctx.push_indent();
-        ctx.push("}, true)\n");
+        if component.once {
+            ctx.push("}, true, true)\n");
+        } else {
+            ctx.push("}, true)\n");
+        }
     } else {
-        ctx.push(", null, true)\n");
+        if component.once {
+            ctx.push(", null, true, true)\n");
+        } else {
+            ctx.push(", null, true)\n");
+        }
     }
 
     // v-show after component creation

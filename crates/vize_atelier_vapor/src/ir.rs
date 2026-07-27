@@ -101,6 +101,7 @@ pub struct IREffect<'a> {
 /// All operation node variants
 #[derive(Debug)]
 pub enum OperationNode<'a> {
+    SetBlockKey(SetBlockKeyIRNode<'a>),
     SetProp(SetPropIRNode<'a>),
     SetDynamicProps(SetDynamicPropsIRNode<'a>),
     SetText(SetTextIRNode<'a>),
@@ -112,11 +113,19 @@ pub enum OperationNode<'a> {
     Directive(DirectiveIRNode<'a>),
     If(Box<'a, IfIRNode<'a>>),
     For(Box<'a, ForIRNode<'a>>),
+    Key(Box<'a, KeyIRNode<'a>>),
     CreateComponent(CreateComponentIRNode<'a>),
     SlotOutlet(SlotOutletIRNode<'a>),
     GetTextChild(GetTextChildIRNode),
     ChildRef(ChildRefIRNode),
     NextRef(NextRefIRNode),
+}
+
+/// Assign a stable key to an existing block.
+#[derive(Debug)]
+pub struct SetBlockKeyIRNode<'a> {
+    pub element: usize,
+    pub value: Box<'a, SimpleExpressionNode<'a>>,
 }
 
 /// Set prop operation
@@ -258,6 +267,15 @@ pub struct ForIRNode<'a> {
     pub insertion: Option<InsertionState>,
 }
 
+/// Reactive keyed fragment operation.
+#[derive(Debug)]
+pub struct KeyIRNode<'a> {
+    pub id: usize,
+    pub value: Box<'a, SimpleExpressionNode<'a>>,
+    pub render: BlockIRNode<'a>,
+    pub insertion: Option<InsertionState>,
+}
+
 /// Placement of a block operation among a parent's children.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InsertionState {
@@ -287,6 +305,8 @@ pub enum ComponentKind {
     Suspense,
     /// Dynamic component: createDynamicComponent
     Dynamic,
+    /// Native elements that cannot be materialized through an HTML template.
+    PlainElement,
 }
 
 /// Create component operation

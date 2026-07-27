@@ -48,6 +48,9 @@ pub struct CompilerOptions {
     /// Whether the template targets a custom renderer instead of the DOM.
     #[serde(default)]
     pub custom_renderer: Option<bool>,
+    /// Whether to preserve HTML comments.
+    #[serde(default)]
+    pub comments: Option<bool>,
     /// Template syntax compatibility mode: "standard", "strict", or "quirks".
     #[serde(default)]
     pub template_syntax: Option<String>,

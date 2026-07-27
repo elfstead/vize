@@ -7,10 +7,53 @@ use vize_carton::{String, cstr};
 /// Collect delegate events from block
 pub(crate) fn collect_delegate_events(ctx: &mut GenerateContext, block: &BlockIRNode<'_>) {
     for op in block.operation.iter() {
-        if let OperationNode::SetEvent(set_event) = op
-            && set_event.delegate
-        {
+        collect_delegate_events_from_operation(ctx, op);
+    }
+    for effect in block.effect.iter() {
+        for op in effect.operations.iter() {
+            collect_delegate_events_from_operation(ctx, op);
+        }
+    }
+}
+
+fn collect_delegate_events_from_operation(ctx: &mut GenerateContext, op: &OperationNode<'_>) {
+    match op {
+        OperationNode::SetEvent(set_event) if set_event.delegate => {
             ctx.add_delegate_event(&set_event.key.content);
+        }
+        OperationNode::If(if_node) => {
+            collect_delegate_events(ctx, &if_node.positive);
+            if let Some(negative) = &if_node.negative {
+                collect_delegate_events_from_negative_branch(ctx, negative);
+            }
+        }
+        OperationNode::For(for_node) => collect_delegate_events(ctx, &for_node.render),
+        OperationNode::Key(key_node) => collect_delegate_events(ctx, &key_node.render),
+        OperationNode::CreateComponent(component) => {
+            for slot in component.slots.iter() {
+                collect_delegate_events(ctx, &slot.block);
+            }
+        }
+        OperationNode::SlotOutlet(slot) => {
+            if let Some(fallback) = &slot.fallback {
+                collect_delegate_events(ctx, fallback);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_delegate_events_from_negative_branch(
+    ctx: &mut GenerateContext,
+    branch: &crate::ir::NegativeBranch<'_>,
+) {
+    match branch {
+        crate::ir::NegativeBranch::Block(block) => collect_delegate_events(ctx, block),
+        crate::ir::NegativeBranch::If(if_node) => {
+            collect_delegate_events(ctx, &if_node.positive);
+            if let Some(negative) = &if_node.negative {
+                collect_delegate_events_from_negative_branch(ctx, negative);
+            }
         }
     }
 }
@@ -30,6 +73,7 @@ pub(crate) fn generate_imports(ctx: &GenerateContext) -> String {
             "createComponentWithFallback" => 2,
             "createComponent" => 3,
             "createDynamicComponent" => 4,
+            "createPlainElement" => 4,
             "VaporTeleport" => 5,
             "VaporKeepAlive" => 6,
             "withVaporCtx" => 7,
@@ -63,6 +107,8 @@ pub(crate) fn generate_imports(ctx: &GenerateContext) -> String {
             "renderEffect" => 79,
             "createIf" => 80,
             "createFor" => 81,
+            "createKeyedFragment" => 82,
+            "setBlockKey" => 83,
             "template" => 100,
             _ => 50,
         }

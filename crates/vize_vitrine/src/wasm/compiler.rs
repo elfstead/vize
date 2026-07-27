@@ -337,6 +337,7 @@ pub(super) fn compile_internal(
         let ssr_opts = SsrCompilerOptions {
             is_ts: opts.is_ts.unwrap_or(false),
             custom_renderer: opts.custom_renderer.unwrap_or(false),
+            comments: opts.comments.unwrap_or(false),
             experimental_in_tag_comments,
             experimental_patterned_template,
             ..Default::default()
@@ -374,6 +375,7 @@ pub(super) fn compile_internal(
             prefix_identifiers: opts.prefix_identifiers.unwrap_or(false),
             ssr: opts.ssr.unwrap_or(false),
             custom_renderer: opts.custom_renderer.unwrap_or(false),
+            comments: opts.comments.unwrap_or(false),
             experimental_in_tag_comments,
             experimental_patterned_template,
             binding_metadata,

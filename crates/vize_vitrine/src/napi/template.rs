@@ -34,6 +34,7 @@ pub fn compile(template: String, options: Option<CompilerOptions>) -> Result<Com
     // Parse
     let parser_opts = ParserOptions {
         custom_renderer: opts.custom_renderer.unwrap_or(false),
+        comments: opts.comments.unwrap_or(false),
         experimental_in_tag_comments: opts.experimental_in_tag_comments.unwrap_or(false),
         ..Default::default()
     };
@@ -119,6 +120,7 @@ pub fn compile_vapor(template: String, options: Option<CompilerOptions>) -> Resu
     let vapor_opts = VaporCompilerOptions {
         prefix_identifiers: opts.prefix_identifiers.unwrap_or(false),
         ssr: opts.ssr.unwrap_or(false),
+        comments: opts.comments.unwrap_or(false),
         experimental_in_tag_comments: opts.experimental_in_tag_comments.unwrap_or(false),
         experimental_patterned_template: opts.experimental_patterned_template.unwrap_or(false),
         ..Default::default()
@@ -161,6 +163,7 @@ pub fn parse_template(
         &allocator,
         &template,
         ParserOptions {
+            comments: opts.comments.unwrap_or(false),
             experimental_in_tag_comments: opts.experimental_in_tag_comments.unwrap_or(false),
             ..Default::default()
         },
