@@ -235,5 +235,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" release/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
+            --prerelease \
             --title "Blue Vize $BLUE_VIZE_VERSION" \
             --notes "Temporary matched Vize packages for Blue. Source: $GITHUB_SHA"
