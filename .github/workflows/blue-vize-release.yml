@@ -1,0 +1,236 @@
+name: Blue Vize Release
+
+on:
+  push:
+    tags:
+      - "blue-vize-*"
+
+concurrency:
+  group: blue-vize-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BLUE_VIZE_VERSION: 0.300.0-blue.1
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NODE_OPTIONS: "--disable-warning=DEP0040 --disable-warning=DEP0169"
+
+jobs:
+  build-native:
+    name: Build native (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: darwin-x64
+            cross_compile: false
+            msvc_arch: amd64
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            platform: darwin-arm64
+            cross_compile: false
+            msvc_arch: amd64
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            platform: win32-x64-msvc
+            cross_compile: false
+            msvc_arch: amd64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            platform: win32-arm64-msvc
+            cross_compile: false
+            msvc_arch: arm64
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x64-gnu
+            cross_compile: false
+            msvc_arch: amd64
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            platform: linux-x64-musl
+            cross_compile: true
+            msvc_arch: amd64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux-arm64-gnu
+            cross_compile: false
+            msvc_arch: amd64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            platform: linux-arm64-musl
+            cross_compile: true
+            msvc_arch: amd64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Enable long paths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Setup Vite+ and Node.js
+        uses: voidzero-dev/setup-vp@ca1c46663915d6c1042ae23bd39ab85718bfb0fa # v1
+        with:
+          node-version-file: ".node-version"
+          cache: true
+          run-install: false
+
+      - name: Install package dependencies
+        run: vp install --frozen-lockfile --prefer-offline --filter './npm/native...'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: blue-vize-native-${{ matrix.target }}
+          cache-workspace-crates: "true"
+
+      - name: Setup Zig
+        if: matrix.cross_compile
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406 # v2
+
+      - name: Build Apple native binding
+        if: runner.os == 'macOS'
+        shell: bash
+        working-directory: npm/native
+        run: |
+          cargo build --release \
+            --manifest-path ../../crates/vize_vitrine/Cargo.toml \
+            -p vize_vitrine \
+            --features napi,legacy \
+            --target "${{ matrix.target }}"
+          cp "../../target/${{ matrix.target }}/release/libvize_vitrine.dylib" \
+            "vize-vitrine.${{ matrix.platform }}.node"
+
+      - name: Build native binding
+        if: runner.os != 'macOS'
+        shell: bash
+        working-directory: npm/native
+        env:
+          CROSS_COMPILE: ${{ matrix.cross_compile }}
+        run: |
+          args=(
+            build
+            --platform
+            --release
+            --manifest-path ../../crates/vize_vitrine/Cargo.toml
+            -p vize_vitrine
+            --features napi,legacy
+            --output-dir .
+            --target "${{ matrix.target }}"
+          )
+          if [[ "$CROSS_COMPILE" == "true" ]]; then
+            args+=(--cross-compile)
+          fi
+          vp exec napi "${args[@]}"
+
+      - name: Smoke host native binding
+        if: matrix.cross_compile == false
+        shell: bash
+        run: node -e "const native = require('./npm/native'); if (typeof native.compileSfc !== 'function') throw new Error('compileSfc missing')"
+
+      - name: Upload native binding
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: bindings-${{ matrix.platform }}
+          path: npm/native/vize-vitrine.${{ matrix.platform }}.node
+          if-no-files-found: error
+          compression-level: 0
+
+  package-release:
+    name: Package and publish GitHub Release
+    needs: build-native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Verify release tag
+        shell: bash
+        run: |
+          test "$GITHUB_REF_NAME" = "blue-vize-$BLUE_VIZE_VERSION"
+          test "$(node -p "require('./npm/native/package.json').version")" = "$BLUE_VIZE_VERSION"
+
+      - name: Setup Vite+ and Node.js
+        uses: voidzero-dev/setup-vp@ca1c46663915d6c1042ae23bd39ab85718bfb0fa # v1
+        with:
+          node-version-file: ".node-version"
+          cache: true
+          run-install: false
+
+      - name: Install package dependencies
+        run: |
+          vp install --frozen-lockfile --prefer-offline \
+            --filter './npm/native...' \
+            --filter './npm/cli...' \
+            --filter './npm/builder/vite...'
+
+      - name: Build CLI package
+        working-directory: npm/cli
+        run: vp pack
+
+      - name: Build Vite plugin package
+        working-directory: npm/builder/vite
+        run: vp pack
+
+      - name: Download native bindings
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: bindings-*
+          path: npm/native/artifacts
+          merge-multiple: true
+
+      - name: Prepare native platform packages
+        working-directory: npm/native
+        run: |
+          vp exec napi create-npm-dirs
+          vp exec napi artifacts --output-dir artifacts
+          vp exec napi pre-publish -t npm --no-gh-release --skip-optional-publish
+          node scripts/sync-entrypoint.mjs
+
+      - name: Smoke packed package installation
+        run: |
+          node tools/npm/smoke-release-install.mjs --prepare-manifests --runtime-checks \
+            npm/native npm/native/npm/* npm/cli npm/builder/vite
+
+      - name: Pack release assets
+        run: |
+          node tools/npm/pack-github-release.mjs release \
+            npm/native npm/native/npm/* npm/cli npm/builder/vite
+
+      - name: Upload release package artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: blue-vize-${{ env.BLUE_VIZE_VERSION }}
+          path: release/*
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Blue Vize $BLUE_VIZE_VERSION" \
+            --notes "Temporary matched Vize packages for Blue. Source: $GITHUB_SHA"
