@@ -147,9 +147,9 @@ catalogs:
 
   # Vue prerelease track used by the playground and benchmark harnesses.
   vue-beta:
-    vue: "3.6.0-rc.2"
-    "@vue/compiler-sfc": "3.6.0-rc.2"
-    "@vue/compiler-vapor": "3.6.0-rc.2"
+    vue: "3.6.0-rc.6"
+    "@vue/compiler-sfc": "3.6.0-rc.6"
+    "@vue/compiler-vapor": "3.6.0-rc.6"
 
   # Test runners and browser automation.
   testing:

@@ -26,7 +26,7 @@
 //! | [`WalkStage::Transform`]  | `lane::traverse::traverse_node`                                                                                                                                                                                | `lane::transform_inner`                |
 //! | [`WalkStage::Codegen`]    | `codegen::node::generate_node`; `codegen::element::helpers::generate_root_node` (3 specialized arms); `codegen::element::v_once::generate_v_once_child` (2 specialized arms)                                    | `codegen::emit`                        |
 //! | [`WalkStage::SsrCodegen`] | `codegen::helpers::process_child`; `codegen::element::vnode::vnode_child_expression`                                                                                                                           | `codegen::SsrCodegenContext::generate` |
-//! | [`WalkStage::VaporLower`] | `lower::transform_children`; the `<template>` child loop in `transform::element`; the three child loops in `transform::element::deferred`; `transform::text::collect_text_runs`                                 | `lower::transform_to_ir_with_diagnostics` |
+//! | [`WalkStage::VaporLower`] | `lower::transform_children`; the `<template>` child loop in `transform::element`; `transform::element::child_layout::flatten_children`                                                                          | `lower::transform_to_ir_with_diagnostics` |
 //!
 //! The specialized-arm sites exist because those dispatchers fall through to
 //! the stage's main funnel for the remaining variants, and counting the whole
@@ -53,7 +53,9 @@
 //!   `static_type` classifier), `vize_atelier_vapor`'s
 //!   `count_dynamic_element_children`, `is_static_element` and
 //!   `generate_element_template`. These walk a subtree to answer a question or
-//!   build a static string, not to run a stage over it.
+//!   build a static string, not to run a stage over it. The ordered Vapor
+//!   child-layout analysis is in this class; its iterative flatten pass is the
+//!   single counted dispatch over the original children.
 //! - **Emission shortcuts** - the single-child inline in
 //!   `codegen::children`, the single-child unwrap in `codegen::v_if::branch`,
 //!   and the text concatenation in `codegen::slots::generate`. These consume a

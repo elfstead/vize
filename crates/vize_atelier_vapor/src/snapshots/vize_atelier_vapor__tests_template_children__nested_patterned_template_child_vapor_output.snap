@@ -3,32 +3,32 @@ source: crates/vize_atelier_vapor/src/tests_template_children.rs
 expression: vapor_output(NESTED)
 ---
 errors=[]
-templates=["<li>X</li>", "<li>Inner fallback</li>", "<p>Outer fallback</p>", "<div><footer>tail</footer></div>"]
+templates=["<li>X</li>", "<li>Inner fallback</li>", "<p>Outer fallback</p>", "<div><!><footer>tail</footer></div>"]
 code=
-import { child as _child, setClass as _setClass, setInsertionState as _setInsertionState, renderEffect as _renderEffect, createIf as _createIf, template as _template } from 'vue';
+import { child as _child, next as _next, setClass as _setClass, setInsertionState as _setInsertionState, renderEffect as _renderEffect, createIf as _createIf, template as _template } from 'vue';
 const t0 = _template("<li>X</li>")
 const t1 = _template("<li>Inner fallback</li>")
 const t2 = _template("<p>Outer fallback</p>", true)
-const t3 = _template("<div><footer>tail</footer></div>", true)
+const t3 = _template("<div><!><footer>tail</footer></div>", true)
 
 export function render(_ctx) {
-  const n1 = t3()
-  const n0 = _child(n1)
-  _setInsertionState(n1, null, true)
-  const n2 = _createIf(() => ((_ctx.outer) === ('open')), () => {
-    _setInsertionState(n1, null, true)
-    const n4 = _createIf(() => ((_ctx.inner) === ('x')), () => {
-      const n6 = t0()
-      return n6
+  const n3 = t3()
+  const n2 = _child(n3)
+  const n1 = _next(n2)
+  _setInsertionState(n3, n2)
+  const n0 = _createIf(() => ((_ctx.outer) === ('open')), () => {
+    const n5 = _createIf(() => ((_ctx.inner) === ('x')), () => {
+      const n7 = t0()
+      return n7
     }, () => {
-      const n8 = t1()
-      return n8
+      const n9 = t1()
+      return n9
     })
-    return n4
+    return n5
   }, () => {
-    const n10 = t2()
-    return n10
+    const n11 = t2()
+    return n11
   })
-  _renderEffect(() => _setClass(n0, _ctx.cls))
-  return n1
+  _renderEffect(() => _setClass(n1, _ctx.cls))
+  return n3
 }

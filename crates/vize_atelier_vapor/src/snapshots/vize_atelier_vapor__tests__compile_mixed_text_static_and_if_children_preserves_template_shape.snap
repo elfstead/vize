@@ -8,7 +8,7 @@ const t1 = _template("<span>  <em class=\"day-offset\">same day</em></span>", tr
 export function render(_ctx) {
 const n2 = t1()
 const n0 = _child(n2)
-_setInsertionState(n2, null, 2)
+_setInsertionState(n2, 2)
 const n1 = _createIf(() => (_ctx.isWeekend), () => {
 const n4 = t0()
 return n4

@@ -60,7 +60,7 @@ pub(crate) fn transform_directive<'a>(
                                 s.push_str(" }");
                                 s
                             };
-                            let obj = ctx.allocator.alloc_str(&obj_content);
+                            let obj = &ctx.allocator.alloc_str(&obj_content);
                             let node = SimpleExpressionNode::new(obj, false, key_exp.loc.clone());
                             props.push(Box::new_in(node, &ctx.allocator));
 
@@ -162,7 +162,7 @@ pub(crate) fn transform_directive<'a>(
                     };
 
                     // Parse modifiers
-                    let mut modifiers = crate::ir::EventModifiers::new(ctx.allocator);
+                    let mut modifiers = crate::ir::EventModifiers::new(&ctx.allocator);
                     let event_name = key_exp.content;
                     let is_dynamic = !key_exp.is_static;
 
@@ -368,7 +368,7 @@ pub(crate) fn transform_directive<'a>(
 }
 
 fn clone_directive<'a>(ctx: &TransformContext<'a>, dir: &DirectiveNode<'a>) -> DirectiveNode<'a> {
-    let mut new_dir = DirectiveNode::new(ctx.allocator, dir.name, dir.loc.clone());
+    let mut new_dir = DirectiveNode::new(&ctx.allocator, dir.name, dir.loc.clone());
     new_dir.raw_name = dir.raw_name;
     new_dir.shorthand = dir.shorthand;
     new_dir.exp = clone_expression(ctx, dir.exp.as_ref());

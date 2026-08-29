@@ -20,11 +20,11 @@ pub(super) fn generate_element_template_with_layout(
         .iter()
         .filter_map(|p| {
             if let PropNode::Directive(dir) = p
-                && dir.name.as_str() == "bind"
+                && dir.name == "bind"
                 && let Some(ref arg) = dir.arg
                 && let ExpressionNode::Simple(key) = arg
             {
-                return Some(key.content.as_str());
+                return Some(key.content);
             }
             None
         })
@@ -33,10 +33,10 @@ pub(super) fn generate_element_template_with_layout(
     // Add static attributes (skip those overridden by dynamic bindings)
     for prop in el.props.iter() {
         if let PropNode::Attribute(attr) = prop {
-            if is_runtime_only_attr(attr.name.as_str()) || attr.name.as_str() == "key" {
+            if is_runtime_only_attr(attr.name) || attr.name == "key" {
                 continue;
             }
-            if dynamic_attrs.contains(attr.name.as_str()) {
+            if dynamic_attrs.contains(attr.name) {
                 continue;
             }
             if let Some(ref value) = attr.value {
@@ -113,9 +113,7 @@ pub(crate) fn escape_html_text(s: &str) -> String {
 
 /// Check if an element is static (no dynamic directives)
 pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
-    if !matches!(el.tag_type, ElementType::Element)
-        || matches!(el.tag.as_str(), "component" | "Component")
-    {
+    if !matches!(el.tag_type, ElementType::Element) || matches!(el.tag, "component" | "Component") {
         return false;
     }
 
@@ -124,7 +122,7 @@ pub(crate) fn is_static_element(el: &ElementNode<'_>) -> bool {
     for prop in el.props.iter() {
         match prop {
             PropNode::Directive(_) => return false,
-            PropNode::Attribute(attr) if is_runtime_only_attr(attr.name.as_str()) => return false,
+            PropNode::Attribute(attr) if is_runtime_only_attr(attr.name) => return false,
             _ => {}
         }
     }
@@ -171,26 +169,24 @@ fn extract_template_ref_value<'a>(
 ) -> Option<Box<'a, SimpleExpressionNode<'a>>> {
     for prop in el.props.iter() {
         match prop {
-            PropNode::Attribute(attr) if attr.name.as_str() == "ref" => {
+            PropNode::Attribute(attr) if attr.name == "ref" => {
                 let value = attr.value.as_ref()?;
-                let node =
-                    SimpleExpressionNode::new(value.content.clone(), true, value.loc.clone());
-                return Some(Box::new_in(node, ctx.allocator));
+                let node = SimpleExpressionNode::new(value.content, true, value.loc.clone());
+                return Some(Box::new_in(node, &ctx.allocator));
             }
-            PropNode::Directive(dir) if dir.name.as_str() == "bind" => {
+            PropNode::Directive(dir) if dir.name == "bind" => {
                 let Some(ExpressionNode::Simple(arg)) = dir.arg.as_ref() else {
                     continue;
                 };
-                if arg.content.as_str() != "ref" {
+                if arg.content != "ref" {
                     continue;
                 }
 
                 let Some(ExpressionNode::Simple(exp)) = dir.exp.as_ref() else {
                     continue;
                 };
-                let node =
-                    SimpleExpressionNode::new(exp.content.clone(), exp.is_static, exp.loc.clone());
-                return Some(Box::new_in(node, ctx.allocator));
+                let node = SimpleExpressionNode::from_node(exp);
+                return Some(Box::new_in(node, &ctx.allocator));
             }
             _ => {}
         }
@@ -203,7 +199,7 @@ fn has_static_ref_for(el: &ElementNode<'_>) -> bool {
     el.props.iter().any(|prop| {
         matches!(
             prop,
-            PropNode::Attribute(attr) if attr.name.as_str() == "ref_for"
+            PropNode::Attribute(attr) if attr.name == "ref_for"
         )
     })
 }

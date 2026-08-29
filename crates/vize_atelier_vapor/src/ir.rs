@@ -288,7 +288,6 @@ pub struct InsertionState {
 /// Client-side insertion mode for a block operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InsertionAnchor {
-    Prepend,
     Before(usize),
     Append,
 }
@@ -359,26 +358,11 @@ pub struct ChildRefIRNode {
     pub child_id: usize,
     pub parent_id: usize,
     pub element_index: usize,
-    pub logical_index: usize,
 }
 
-/// Next sibling reference operation (`_next` / `_nthChild` helper).
-///
-/// `offset` is how many rendered siblings separate this node from `prev_id`.
-/// The runtime's `next(node, i)` advances **one** sibling outside hydration
-/// and treats `i` as an absolute index into the parent while hydrating, so a
-/// jump of two or more must become `_nthChild(parent, index)` and a
-/// single-step jump must carry this node's real index — not a literal `1`
-/// (#3330). The generator derives the parent and the absolute index by
-/// walking back to the `ChildRef` that anchors the sibling chain, so they do
-/// not have to be restated here.
-///
-/// The short-lived `parent_id` and `index` fields from #3337 are gone again:
-/// this struct is externally constructible, so generation-only state belongs in
-/// the crate-private `GenerateContext` rather than on the public shape.
+/// Next sibling reference operation (`_next` helper).
 #[derive(Debug)]
 pub struct NextRefIRNode {
     pub child_id: usize,
     pub prev_id: usize,
-    pub logical_index: usize,
 }

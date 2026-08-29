@@ -1,11 +1,11 @@
-//! P2-12a pre-S2 traversal baseline: the Vapor lane.
+//! Vapor traversal ratchet, seeded from the P2-12a pre-S2 baseline.
 //!
 //! One fused compile per ladder fixture, diffing
 //! `vize_atelier_core::walk_probe` around it: the template-node visits and
 //! stage tree-walks today's still-live pipeline makes. This is the sweep that
 //! produced `davinci-road/plan/walk-baseline.md` and filled
-//! `budgets.toml [traversal]`; the numbers below are that record, pinned
-//! exactly. Any change means a stage started or stopped walking the tree -
+//! `budgets.toml [traversal]`; the numbers below are the current tightened
+//! ceilings. Any change means a stage started or stopped walking the tree -
 //! re-derive the baseline deliberately (`--nocapture` prints every row and
 //! its per-stage breakdown) and move the budget entry with a reviewed PR, per
 //! the ratchet rule at the top of `budgets.toml`.
@@ -27,12 +27,12 @@ use vize_davinci::legacy_plan;
 
 /// fixture name -> (stage tree-walks, template-node visits) per fused compile.
 const BASELINE: [(&str, u64, u64); 6] = [
-    ("small", 2, 25),
-    ("medium", 2, 102),
-    ("large", 2, 127),
-    ("stress-deep", 2, 256),
+    ("small", 2, 21),
+    ("medium", 2, 78),
+    ("large", 2, 110),
+    ("stress-deep", 2, 197),
     ("stress-wide", 2, 4),
-    ("stress-interp", 2, 3102),
+    ("stress-interp", 2, 2902),
 ];
 
 #[test]
@@ -95,6 +95,6 @@ fn vapor_walk_baseline_holds() {
 
     assert_eq!(
         measured, expected,
-        "vapor: the pre-S2 traversal baseline moved from the pinned P2-12a record"
+        "vapor: the traversal ratchet moved from its pinned record"
     );
 }

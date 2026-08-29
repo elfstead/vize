@@ -72,6 +72,26 @@ three tables — a cross-check on the probe rather than a coincidence.
 | stress-wide   |     2 |      4 |         2 |           2 |
 | stress-interp |     2 |   3102 |      1001 |        2101 |
 
+#### Ordered-layout ratchet
+
+The ordered child-layout pass later replaced Vapor's repeated deferred-child
+and text-run scans with one iterative dispatch. The active traversal ceilings
+in `budgets.toml` and the Vapor recorder are therefore tighter than the
+phase-start table above:
+
+| fixture       | walks | visits | transform | vapor_lower |
+| ------------- | ----: | -----: | --------: | ----------: |
+| small         |     2 |     21 |         8 |          13 |
+| medium        |     2 |     78 |        33 |          45 |
+| large         |     2 |    110 |        57 |          53 |
+| stress-deep   |     2 |    197 |        72 |         125 |
+| stress-wide   |     2 |      4 |         2 |           2 |
+| stress-interp |     2 |   2902 |      1001 |        1901 |
+
+The original P2-12a table remains above as the phase-start record. This
+ratchet changes node visits, not stage walks: Vapor still performs one shared
+transform walk and one lowering walk.
+
 ## What the numbers say
 
 - **Every backend pays the transform lane in full, then walks the tree

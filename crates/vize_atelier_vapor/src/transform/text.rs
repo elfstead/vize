@@ -19,7 +19,7 @@ pub(crate) fn transform_text<'a>(
     block: &mut BlockIRNode<'a>,
 ) {
     let element_id = ctx.next_id();
-    let template: vize_carton::String = text.content.clone();
+    let template: vize_carton::String = text.content.into();
     ctx.add_template(element_id, template);
     block.returns.push(element_id);
 }
@@ -40,16 +40,12 @@ pub(crate) fn transform_interpolation<'a>(
     // Create SetText operation
     let values = match &interp.content {
         ExpressionNode::Simple(simple) => {
-            let mut v = Vec::new_in(ctx.allocator);
-            let exp = SimpleExpressionNode::new(
-                simple.content.clone(),
-                simple.is_static,
-                simple.loc.clone(),
-            );
-            v.push(Box::new_in(exp, ctx.allocator));
+            let mut v = Vec::new_in(&ctx.allocator);
+            let exp = SimpleExpressionNode::from_node(simple);
+            v.push(Box::new_in(exp, &ctx.allocator));
             v
         }
-        _ => Vec::new_in(ctx.allocator),
+        _ => Vec::new_in(&ctx.allocator),
     };
 
     let set_text = SetTextIRNode {
@@ -71,28 +67,24 @@ pub(crate) fn transform_text_children<'a, 'node>(
 ) where
     'a: 'node,
 {
-    let mut values = Vec::new_in(ctx.allocator);
+    let mut values = Vec::new_in(&ctx.allocator);
 
     for child in children {
         match child {
             TemplateChildNode::Text(text) => {
                 // Static text part
                 let exp = SimpleExpressionNode::new(
-                    text.content.clone(),
+                    text.content,
                     true, // is_static = true
                     SourceLocation::STUB,
                 );
-                values.push(Box::new_in(exp, ctx.allocator));
+                values.push(Box::new_in(exp, &ctx.allocator));
             }
             TemplateChildNode::Interpolation(interp) => {
                 // Dynamic interpolation
                 if let ExpressionNode::Simple(simple) = &interp.content {
-                    let exp = SimpleExpressionNode::new(
-                        simple.content.clone(),
-                        simple.is_static,
-                        simple.loc.clone(),
-                    );
-                    values.push(Box::new_in(exp, ctx.allocator));
+                    let exp = SimpleExpressionNode::from_node(simple);
+                    values.push(Box::new_in(exp, &ctx.allocator));
                 }
             }
             _ => {}

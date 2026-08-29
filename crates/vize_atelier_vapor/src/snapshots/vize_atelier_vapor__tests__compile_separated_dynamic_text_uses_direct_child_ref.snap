@@ -6,7 +6,7 @@ import { child as _child, next as _next, toDisplayString as _toDisplayString, se
 const t0 = _template("<div><span></span> </div>", true)
 export function render(_ctx) {
 const n1 = t0()
-const n0 = _next(_child(n1), 1)
+const n0 = _next(_child(n1))
 _renderEffect(() => _setText(n0, _toDisplayString(_ctx.value)))
 return n1
 }

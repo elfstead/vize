@@ -27,12 +27,6 @@ pub(crate) struct GenerateContext<'a> {
     pub(crate) delegate_events: FxHashSet<String>,
     /// Text node references (element_id -> text_node_var)
     pub(crate) text_nodes: FxHashMap<usize, String>,
-    /// Position of every node reached by a `ChildRef`/`NextRef` operation
-    /// (element_id -> (parent_id, absolute rendered index within the parent)).
-    /// Sibling navigation needs both to emit a hydration index (#3330), and a
-    /// `NextRef` only names its predecessor, so each operation records where it
-    /// landed for the next one to read.
-    node_positions: FxHashMap<usize, (usize, usize)>,
     /// Whether currently inside a non-root block (v-if, v-for)
     pub(crate) is_fragment: bool,
     /// For-loop scope stack
@@ -73,7 +67,6 @@ impl<'a> GenerateContext<'a> {
             used_helpers: FxHashSet::default(),
             delegate_events: FxHashSet::default(),
             text_nodes: FxHashMap::default(),
-            node_positions: FxHashMap::default(),
             is_fragment: false,
             for_scopes: std::vec::Vec::new(),
             slot_scopes: std::vec::Vec::new(),
@@ -84,16 +77,6 @@ impl<'a> GenerateContext<'a> {
             binding_metadata,
             jsx_closure: false,
         }
-    }
-
-    /// Record where a node reference landed, for later sibling navigation.
-    pub(crate) fn record_node_position(&mut self, id: usize, parent_id: usize, index: usize) {
-        self.node_positions.insert(id, (parent_id, index));
-    }
-
-    /// Parent and absolute rendered index of a previously referenced node.
-    pub(crate) fn node_position(&self, id: usize) -> Option<(usize, usize)> {
-        self.node_positions.get(&id).copied()
     }
 
     /// Resolve an expression, replacing for-loop aliases with _for_item/key references

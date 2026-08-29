@@ -1,21 +1,14 @@
-//! Regression tests for multi-step sibling navigation (#3330).
+//! Regression tests for Vue Vapor RC.6 sibling navigation.
 //!
-//! The Vue Vapor runtime's `next(node, i)` advances **exactly one** sibling
-//! outside hydration — `i` is an absolute logical index consulted only while
-//! hydrating, never a step count:
+//! RC.6's `next(node)` advances one logical sibling in both client rendering
+//! and hydration. Multi-step jumps use `nthChild(parent, index)`:
 //!
 //! ```js
-//! function next(node, logicalIndex) {
-//!   if (isHydrating) return locateChildByLogicalIndex(node.parentNode, logicalIndex)
-//!   return _next(node) // one sibling
+//! function next(node) {
+//!   if (isHydrating) return nextLogicalSibling(node)
+//!   return _next(node)
 //! }
 //! ```
-//!
-//! Emitting `_next(node, 3)` for a three-sibling jump therefore landed one
-//! sibling over, and the chained `_child()` that followed dereferenced `null`
-//! (`TypeError: Cannot read properties of null (reading 'firstChild')`).
-//! Multi-step jumps must use `_nthChild(parent, index)`, which honours the
-//! index in both modes — the same rule `@vue/compiler-vapor` follows.
 
 use super::compile_vapor;
 use vize_carton::{Allocator, String};
@@ -86,10 +79,9 @@ fn multi_step_navigation_uses_nth_child_not_a_counted_next() {
         !code.contains("_next(_child(n1), 3)"),
         "a counted _next advances only one sibling at runtime:\n{code}"
     );
-    // The single-sibling hop between the two `<li>` elements stays a `_next`,
-    // carrying its absolute index so hydration resolves the same node.
+    // The single-sibling hop between the two `<li>` elements stays a `_next`.
     assert!(
-        code.contains("_next(n2, 1)"),
+        code.contains("_next(n2)"),
         "expected a single-step _next for the adjacent sibling:\n{code}"
     );
     assert!(
@@ -98,10 +90,9 @@ fn multi_step_navigation_uses_nth_child_not_a_counted_next() {
     );
 }
 
-/// No `_next` call may ever carry a step count above one: that argument is a
-/// hydration index, and treating it as a count is exactly the #3330 defect.
+/// RC.6 removed the hydration-index argument from `_next` entirely.
 #[test]
-fn no_emitted_next_call_advances_more_than_one_sibling() {
+fn no_emitted_next_call_carries_an_index() {
     // Plain HTML tags only: an unknown tag resolves as a component and never
     // reaches the sibling-navigation path, which would make this vacuous.
     for template in [
@@ -120,22 +111,14 @@ fn no_emitted_next_call_advances_more_than_one_sibling() {
             code.contains("_next(") || code.contains("_nthChild("),
             "expected this template to exercise sibling navigation:\n{template}\n{code}"
         );
-        // Every `_next(base, i)` advances exactly one sibling at runtime, so
-        // its second argument must never be read as a step count. The only
-        // shapes the generator may emit are `_next(_child(nP), 1)` and
-        // `_next(nX, i)` for an adjacent hop; a `_next` starting from a
-        // `_child` of *any* parent with an index above 1 is a counted jump —
-        // the #3330 defect.
+        // Every `_next(base)` advances exactly one sibling. Larger jumps must
+        // use `_nthChild(parent, index)`.
         for (base, index) in next_calls(&code) {
-            if !base.starts_with("_child(") {
-                continue;
-            }
             assert_eq!(
-                index,
-                Some("1"),
-                "a counted _next advances only one sibling at runtime:\n{template}\n{code}"
+                index, None,
+                "RC.6 next() accepts no hydration index:\n{template}\n{code}"
             );
-            checked_child_bases += 1;
+            checked_child_bases += usize::from(base.starts_with("_child("));
         }
         assert!(
             checked_child_bases > 0 || code.contains("_nthChild("),
@@ -159,7 +142,7 @@ fn single_step_navigation_shapes_are_unchanged() {
 
     let second = compile(r#"<div><a/><b :id="x"/></div>"#);
     assert!(
-        second.contains("_next(_child(n1), 1)"),
+        second.contains("_next(_child(n1))"),
         "index 1 stays one _next step from the first child:\n{second}"
     );
     assert!(
@@ -168,40 +151,19 @@ fn single_step_navigation_shapes_are_unchanged() {
     );
 }
 
-/// The hydration hint on a single-step `_next` must be the target's absolute
-/// index in the parent, not a literal `1`. During hydration the runtime reads
-/// it as `locateChildByLogicalIndex(parent, i)`, so a wrong index resolves the
-/// wrong node — or `null` — even though client-side rendering looks correct.
+/// Adjacent referenced children use one argument-free `_next` call.
 #[test]
-fn single_step_next_carries_the_targets_absolute_index() {
+fn single_step_next_uses_rc6_signature() {
     // `<span :id="y">` is the parent's child at index 3, exactly one rendered
     // sibling past `<span :id="x">` at index 2.
     let code = compile(r#"<div><p/><p/><span :id="x"><i/></span><span :id="y"><i/></span></div>"#);
 
-    // The base variable name depends on id allocation; the hydration hint is
-    // what this pins.
-    let next_calls: Vec<&str> = code
-        .match_indices("_next(")
-        .map(|(at, _)| {
-            let rest = &code[at + "_next(".len()..];
-            &rest[..rest.find(')').unwrap_or(rest.len())]
-        })
-        .collect();
-    assert!(
-        next_calls.iter().any(|call| call.ends_with(", 3")),
-        "expected the absolute index 3 as the hydration hint, got {next_calls:?}:\n{code}"
-    );
-    assert!(
-        !next_calls.iter().any(|call| call.ends_with(", 1")),
-        "a literal 1 resolves the wrong node while hydrating, got {next_calls:?}:\n{code}"
-    );
+    assert_eq!(next_calls(&code), vec![("n0", None)], "{code}");
 }
 
-/// Chained bare `_next(node)` calls must never be emitted: each one reaches
-/// `locateChildByLogicalIndex(parent, undefined)` during hydration, where no
-/// index equals `undefined`, so the chain yields `null`.
+/// Every emitted `_next` call must use the RC.6 one-argument contract.
 #[test]
-fn no_bare_next_call_is_emitted() {
+fn every_next_call_is_bare() {
     for template in [
         r#"<div><p/><span :id="x"><i/></span><p/><p/><span :id="y"><i/></span></div>"#,
         r#"<div><span :id="x"><i/></span><p/><p/><p/><span :id="y"><i/></span></div>"#,
@@ -225,8 +187,8 @@ fn no_bare_next_call_is_emitted() {
                     i += 1;
                 }
                 assert!(
-                    has_top_level_comma,
-                    "every _next must carry a hydration index:\n{template}\n{line}"
+                    !has_top_level_comma,
+                    "RC.6 _next must not carry a hydration index:\n{template}\n{line}"
                 );
                 from = open;
             }

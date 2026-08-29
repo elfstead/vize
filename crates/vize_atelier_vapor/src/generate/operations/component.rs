@@ -41,12 +41,12 @@ pub(super) fn generate_create_component(
     component: &CreateComponentIRNode<'_>,
     element_template_map: &FxHashMap<usize, usize>,
 ) {
-    let tag = &component.tag;
+    let tag = component.tag;
     let kind = component.kind;
     let use_with_vapor_ctx = kind == ComponentKind::Suspense || kind == ComponentKind::KeepAlive;
 
     // Track if this component was already resolved by a parent (Suspense/KeepAlive)
-    let was_already_resolved = ctx.is_component_resolved(tag.as_str());
+    let was_already_resolved = ctx.is_component_resolved(tag);
 
     // For Suspense/KeepAlive, resolve inner components FIRST (before the outer component)
     if use_with_vapor_ctx {
@@ -55,14 +55,14 @@ pub(super) fn generate_create_component(
                 if let OperationNode::CreateComponent(inner_comp) = op
                     && (inner_comp.kind == ComponentKind::Regular
                         || inner_comp.kind == ComponentKind::Suspense)
-                    && !ctx.is_component_resolved(inner_comp.tag.as_str())
+                    && !ctx.is_component_resolved(inner_comp.tag)
                 {
                     emit_component_resolution(
                         ctx,
-                        component_resolution_var(inner_comp.tag.as_str()).as_str(),
-                        inner_comp.tag.as_str(),
+                        component_resolution_var(inner_comp.tag).as_str(),
+                        inner_comp.tag,
                     );
-                    ctx.mark_component_resolved(inner_comp.tag.as_str());
+                    ctx.mark_component_resolved(inner_comp.tag);
                 }
             }
         }
@@ -79,13 +79,13 @@ pub(super) fn generate_create_component(
                 (
                     cstr!(
                         "_resolveDynamicComponent(\"{}\")",
-                        escape_js_string_literal(is_exp.content.as_str())
+                        escape_js_string_literal(is_exp.content)
                     ),
                     "createComponentWithFallback",
                 )
             } else if let Some(ref is_exp) = component.is_expr {
                 ctx.use_helper("createDynamicComponent");
-                let resolved = ctx.resolve_expression(is_exp.content.as_str());
+                let resolved = ctx.resolve_expression_node(is_exp);
                 (cstr!("() => ({})", resolved), "createDynamicComponent")
             } else {
                 ctx.use_helper("createDynamicComponent");
@@ -95,7 +95,7 @@ pub(super) fn generate_create_component(
         ComponentKind::PlainElement => {
             ctx.use_helper("createPlainElement");
             (
-                cstr!("\"{}\"", escape_js_string_literal(tag.as_str())),
+                cstr!("\"{}\"", escape_js_string_literal(tag)),
                 "createPlainElement",
             )
         }
@@ -111,19 +111,19 @@ pub(super) fn generate_create_component(
         }
         ComponentKind::Suspense => {
             ctx.use_helper("createComponentWithFallback");
-            let comp_var = component_resolution_var(tag.as_str());
-            if !ctx.is_component_resolved(tag.as_str()) {
-                emit_component_resolution(ctx, comp_var.as_str(), tag.as_str());
-                ctx.mark_component_resolved(tag.as_str());
+            let comp_var = component_resolution_var(tag);
+            if !ctx.is_component_resolved(tag) {
+                emit_component_resolution(ctx, comp_var.as_str(), tag);
+                ctx.mark_component_resolved(tag);
             }
             (comp_var, "createComponentWithFallback")
         }
         ComponentKind::Regular => {
             ctx.use_helper("createComponentWithFallback");
-            let comp_var = component_resolution_var(tag.as_str());
-            if !ctx.is_component_resolved(tag.as_str()) {
-                emit_component_resolution(ctx, comp_var.as_str(), tag.as_str());
-                ctx.mark_component_resolved(tag.as_str());
+            let comp_var = component_resolution_var(tag);
+            if !ctx.is_component_resolved(tag) {
+                emit_component_resolution(ctx, comp_var.as_str(), tag);
+                ctx.mark_component_resolved(tag);
             }
             (comp_var, "createComponentWithFallback")
         }
@@ -175,7 +175,7 @@ pub(super) fn generate_create_component(
             ctx.push_indent();
             ctx.push(&cstr!(
                 "\"{}\":",
-                escape_js_string_literal(slot.name.content.as_str())
+                escape_js_string_literal(slot.name.content)
             ));
             generate_slot_fn(ctx, slot, element_template_map, use_with_vapor_ctx);
             if i < static_slots.len() - 1 || !dynamic_slots.is_empty() {
@@ -191,7 +191,7 @@ pub(super) fn generate_create_component(
                 ctx.push_indent();
                 ctx.push("() => ({\n");
                 ctx.indent();
-                let name_resolved = ctx.resolve_expression(slot.name.content.as_str());
+                let name_resolved = ctx.resolve_expression_node(&slot.name);
                 ctx.push_line(&cstr!("name: {},", name_resolved));
                 ctx.push_indent();
                 ctx.push("fn:");
@@ -228,7 +228,7 @@ pub(super) fn generate_create_component(
     // v-show after component creation
     if let Some(ref v_show) = component.v_show {
         ctx.use_helper("applyVShow");
-        let resolved = ctx.resolve_expression(v_show.content.as_str());
+        let resolved = ctx.resolve_expression_node(v_show);
         ctx.push_line(&cstr!(
             "_applyVShow(n{}, () => ({}))",
             component.id,

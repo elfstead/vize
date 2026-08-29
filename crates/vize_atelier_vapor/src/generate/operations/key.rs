@@ -14,7 +14,7 @@ pub(super) fn generate_key(
     ctx.use_helper("createKeyedFragment");
     emit_insertion_state(ctx, key.insertion);
 
-    let value = ctx.resolve_expression(&key.value.content);
+    let value = ctx.resolve_expression_node(&key.value);
     ctx.push_line(&cstr!(
         "const n{} = _createKeyedFragment(() => ({}), () => {{",
         key.id,
@@ -34,12 +34,9 @@ pub(super) fn generate_key(
 pub(super) fn generate_set_block_key(ctx: &mut GenerateContext, key: &SetBlockKeyIRNode<'_>) {
     ctx.use_helper("setBlockKey");
     let value = if key.value.is_static {
-        cstr!(
-            "\"{}\"",
-            escape_js_string_literal(key.value.content.as_str())
-        )
+        cstr!("\"{}\"", escape_js_string_literal(key.value.content))
     } else {
-        ctx.resolve_expression(&key.value.content)
+        ctx.resolve_expression_node(&key.value)
     };
     ctx.push_line(&cstr!("_setBlockKey(n{}, {})", key.element, value));
 }

@@ -1,5 +1,5 @@
 use crate::ir::IRSlot;
-use vize_carton::{FxHashMap, String, cstr};
+use vize_carton::{FxHashMap, String, cstr, ensure_sufficient_stack};
 
 use super::super::{context::GenerateContext, generate_block};
 
@@ -30,7 +30,7 @@ pub(super) fn generate_slot_fn(
     }
     ctx.indent();
     ctx.push_component_scope();
-    generate_block(ctx, &slot.block, element_template_map);
+    ensure_sufficient_stack(|| generate_block(ctx, &slot.block, element_template_map));
     ctx.pop_component_scope();
     ctx.deindent();
     ctx.push_indent();

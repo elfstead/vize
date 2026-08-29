@@ -75,7 +75,7 @@ pub(crate) fn transform_children<'a>(
         vize_atelier_core::walk_probe::WalkStage::VaporLower,
         children.len(),
     );
-    let mut block = BlockIRNode::new(ctx.allocator);
+    let mut block = BlockIRNode::new(&ctx.allocator);
     // Note: Don't consume an ID for the block itself - element IDs should start from 0
 
     // Check if ALL children are text/interpolation (combined text case)

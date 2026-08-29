@@ -16,7 +16,7 @@ pub(super) fn generate_set_template_ref(
     let value = if set_ref.value.is_static {
         cstr!("\"{}\"", set_ref.value.content)
     } else {
-        ctx.resolve_expression(set_ref.value.content.as_str())
+        ctx.resolve_expression_node(&set_ref.value)
     };
 
     if set_ref.ref_for {
@@ -84,42 +84,25 @@ pub(super) fn generate_child_ref(ctx: &mut GenerateContext, child_ref: &ChildRef
     match child_ref.element_index {
         0 => {
             ctx.use_helper("child");
-            if child_ref.logical_index == 0 {
-                ctx.push_line_fmt(format_args!(
-                    "const n{} = _child(n{})",
-                    child_ref.child_id, child_ref.parent_id
-                ));
-            } else {
-                ctx.push_line_fmt(format_args!(
-                    "const n{} = _child(n{}, {})",
-                    child_ref.child_id, child_ref.parent_id, child_ref.logical_index
-                ));
-            }
+            ctx.push_line_fmt(format_args!(
+                "const n{} = _child(n{})",
+                child_ref.child_id, child_ref.parent_id
+            ));
         }
         1 => {
             ctx.use_helper("child");
             ctx.use_helper("next");
             ctx.push_line_fmt(format_args!(
-                "const n{} = _next(_child(n{}), {})",
-                child_ref.child_id, child_ref.parent_id, child_ref.logical_index
+                "const n{} = _next(_child(n{}))",
+                child_ref.child_id, child_ref.parent_id
             ));
         }
         _ => {
             ctx.use_helper("nthChild");
-            if child_ref.logical_index == child_ref.element_index {
-                ctx.push_line_fmt(format_args!(
-                    "const n{} = _nthChild(n{}, {})",
-                    child_ref.child_id, child_ref.parent_id, child_ref.element_index
-                ));
-            } else {
-                ctx.push_line_fmt(format_args!(
-                    "const n{} = _nthChild(n{}, {}, {})",
-                    child_ref.child_id,
-                    child_ref.parent_id,
-                    child_ref.element_index,
-                    child_ref.logical_index
-                ));
-            }
+            ctx.push_line_fmt(format_args!(
+                "const n{} = _nthChild(n{}, {})",
+                child_ref.child_id, child_ref.parent_id, child_ref.element_index
+            ));
         }
     }
 }
@@ -128,7 +111,7 @@ pub(super) fn generate_child_ref(ctx: &mut GenerateContext, child_ref: &ChildRef
 pub(super) fn generate_next_ref(ctx: &mut GenerateContext, next_ref: &NextRefIRNode) {
     ctx.use_helper("next");
     ctx.push_line_fmt(format_args!(
-        "const n{} = _next(n{}, {})",
-        next_ref.child_id, next_ref.prev_id, next_ref.logical_index
+        "const n{} = _next(n{})",
+        next_ref.child_id, next_ref.prev_id
     ));
 }

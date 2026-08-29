@@ -148,8 +148,8 @@ fn test_compile_nested_component_child() {
 }
 
 #[test]
-fn test_compile_nested_components_use_logical_insertion_indices() {
-    let allocator = Bump::new();
+fn test_compile_nested_components_use_anchor_and_append_insertion_states() {
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         "<header><Brand /><nav><Link /><Link /></nav><button @click=\"count++\">{{ count }}</button></header>",
@@ -164,29 +164,37 @@ fn test_compile_nested_components_use_logical_insertion_indices() {
 
     let code = normalize_code(&result.code);
     assert_eq!(code.matches("_setInsertionState(").count(), 3);
+    let insertion_lines = code
+        .lines()
+        .filter(|line| line.starts_with("_setInsertionState("))
+        .collect::<Vec<_>>();
     assert_eq!(
-        code.lines()
-            .filter(|line| line.starts_with("_setInsertionState(")
-                && line.ends_with(", 0)")
-                && !line.contains("null"))
+        insertion_lines
+            .iter()
+            .filter(|line| line.contains(", n"))
             .count(),
         1
     );
-    assert_eq!(code.matches(", null, 0)").count(), 1);
-    assert_eq!(code.matches(", null, 1)").count(), 1);
-    assert!(
-        code.lines()
-            .any(|line| line.contains(" = _child(") && line.ends_with(", 1)"))
+    assert_eq!(
+        insertion_lines
+            .iter()
+            .filter(|line| !line.contains(','))
+            .count(),
+        1
     );
-    assert!(
-        code.lines()
-            .any(|line| line.contains(" = _next(") && line.ends_with(", 2)"))
+    assert_eq!(
+        insertion_lines
+            .iter()
+            .filter(|line| line.ends_with(", 1)"))
+            .count(),
+        1
     );
+    assert!(insertion_lines.iter().all(|line| !line.contains("null")));
 }
 
 #[test]
-fn test_compile_middle_block_run_uses_one_anchor_and_distinct_dom_indices() {
-    let allocator = Bump::new();
+fn test_compile_middle_block_run_uses_one_anchor_per_block() {
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><span/><A/><B/><button :class="x"/></div>"#,
@@ -200,17 +208,19 @@ fn test_compile_middle_block_run_uses_one_anchor_and_distinct_dom_indices() {
     );
 
     let code = normalize_code(&result.code);
-    assert!(code.contains("<div><span></span><!><button"));
-    assert!(code.contains("const n3 = _next(_child(n4), 1)"), "{code}");
-    assert!(code.contains("const n2 = _next(n3, 3)"), "{code}");
-    assert!(code.contains("_setInsertionState(n4, n3, 1)"), "{code}");
-    assert!(code.contains("_setInsertionState(n4, n3, 2)"), "{code}");
-    assert_eq!(code.matches("<!>").count(), 1);
+    assert!(code.contains("<div><span></span><!><!><button"), "{code}");
+    assert_eq!(code.matches("<!>").count(), 2);
+    assert_eq!(code.matches("_setInsertionState(").count(), 2);
+    assert!(
+        code.lines()
+            .filter(|line| line.starts_with("_setInsertionState("))
+            .all(|line| { line.contains(", n") && line.matches(',').count() == 1 })
+    );
 }
 
 #[test]
-fn test_compile_hydration_refs_keep_physical_and_logical_indices_distinct() {
-    let allocator = Bump::new();
+fn test_compile_hydration_refs_share_anchor_aligned_indices() {
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><Comp/><div/><span/><div v-if="true"/><div><button :disabled="foo"/></div></div>"#,
@@ -224,15 +234,20 @@ fn test_compile_hydration_refs_keep_physical_and_logical_indices_distinct() {
     );
 
     let code = normalize_code(&result.code);
-    assert!(code.contains("_nthChild(n4, 2, 3)"), "{code}");
-    assert!(code.contains("_next(n3, 4)"), "{code}");
-    assert!(code.contains("_setInsertionState(n4, 0)"), "{code}");
-    assert!(code.contains("_setInsertionState(n4, n3, 3)"), "{code}");
+    assert_eq!(code.matches("<!>").count(), 2, "{code}");
+    assert!(code.contains("_nthChild(n5, 3)"), "{code}");
+    assert!(code.contains("_next(n4)"), "{code}");
+    assert_eq!(code.matches("_setInsertionState(").count(), 2, "{code}");
+    assert!(
+        code.lines()
+            .filter(|line| line.starts_with("_setInsertionState("))
+            .all(|line| { line.contains(", n") && line.matches(',').count() == 1 })
+    );
 }
 
 #[test]
 fn test_compile_all_dynamic_children_append_in_logical_order() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><Comp1/><div v-if="show">if</div><div v-else>else</div><Comp2/></div>"#,
@@ -247,14 +262,14 @@ fn test_compile_all_dynamic_children_append_in_logical_order() {
 
     let code = normalize_code(&result.code);
     assert!(!code.contains("<!>"), "{code}");
-    assert!(code.contains("_setInsertionState(n3, null, 0)"), "{code}");
-    assert!(code.contains("_setInsertionState(n3, null, 1)"), "{code}");
-    assert!(code.contains("_setInsertionState(n3, null, 2)"), "{code}");
+    assert!(code.contains("_setInsertionState(n3)"), "{code}");
+    assert!(code.contains("_setInsertionState(n3, 1)"), "{code}");
+    assert!(code.contains("_setInsertionState(n3, 2)"), "{code}");
 }
 
 #[test]
 fn test_compile_middle_slot_and_control_flow_use_typed_insertion_state() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     for source in [
         "<div><span/><slot/><button/></div>",
         r#"<div><span/><template v-if="ok"><b/></template><button/></div>"#,
@@ -273,7 +288,7 @@ fn test_compile_middle_slot_and_control_flow_use_typed_insertion_state() {
             code.lines()
                 .any(|line| line.starts_with("_setInsertionState(")
                     && line.contains(", n")
-                    && line.ends_with(", 1)")),
+                    && line.matches(',').count() == 1),
             "{code}"
         );
         assert!(
@@ -512,7 +527,7 @@ fn test_compile_mixed_text_static_and_if_children_preserves_template_shape() {
 
 #[test]
 fn test_compile_separated_dynamic_text_uses_direct_child_ref() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><span></span>{{ value }}</div>"#,
@@ -536,7 +551,7 @@ fn test_compile_separated_dynamic_text_uses_direct_child_ref() {
 
 #[test]
 fn test_compile_multiple_dynamic_text_runs_get_distinct_refs() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div>{{ first }}<span></span>{{ second }}</div>"#,
@@ -556,8 +571,8 @@ fn test_compile_multiple_dynamic_text_runs_get_distinct_refs() {
 }
 
 #[test]
-fn test_compile_dynamic_text_after_component_keeps_logical_index() {
-    let allocator = Bump::new();
+fn test_compile_dynamic_text_after_component_uses_anchor_navigation() {
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><Comp />{{ value }}</div>"#,
@@ -572,13 +587,14 @@ fn test_compile_dynamic_text_after_component_keeps_logical_index() {
 
     let code = normalize_code(&result.code);
     assert!(!code.contains("txt as _txt"), "{code}");
-    assert!(code.contains("_child(n2, 1)"), "{code}");
+    assert!(code.contains("const n1 = _next(n2)"), "{code}");
+    assert!(code.contains("_setInsertionState(n3, n2)"), "{code}");
     insta::assert_snapshot!(code.as_str());
 }
 
 #[test]
 fn test_compile_dynamic_text_around_component_shares_ordered_layout() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div>{{ before }}<Comp />{{ after }}</div>"#,
@@ -592,7 +608,7 @@ fn test_compile_dynamic_text_around_component_shares_ordered_layout() {
     );
 
     let code = normalize_code(&result.code);
-    assert!(code.contains("_setInsertionState(n4, n3, 1)"), "{code}");
+    assert!(code.contains("_setInsertionState(n4, n3)"), "{code}");
     assert!(
         code.contains("_setText(n0, _toDisplayString(_ctx.before))"),
         "{code}"
@@ -606,7 +622,7 @@ fn test_compile_dynamic_text_around_component_shares_ordered_layout() {
 
 #[test]
 fn test_compile_dynamic_component_dispatch_precedes_child_layout() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<component :is="view"><span>{{ message }}</span></component>"#,
@@ -1053,7 +1069,7 @@ fn test_compile_slot_outlet_preserves_dynamic_name() {
 
 #[test]
 fn test_compile_slot_fallback_collects_nested_delegate_events() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<slot><button @click="handler"/></slot>"#,
@@ -1133,7 +1149,7 @@ fn test_compile_v_once_lowers_without_runtime_directives() {
 
 #[test]
 fn test_compile_nested_v_once_uses_shared_non_reactive_lowering() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><span v-once :class="value"/></div>"#,
@@ -1198,7 +1214,7 @@ fn test_compile_v_memo_with_dependencies_reports_diagnostic() {
 
 #[test]
 fn test_compile_nested_v_memo_reports_diagnostic() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><span v-memo="[value]" :class="value"/></div>"#,
@@ -1215,7 +1231,7 @@ fn test_compile_nested_v_memo_reports_diagnostic() {
 
 #[test]
 fn test_compile_nested_keyed_v_memo_reports_one_diagnostic() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><span :key="id" v-memo="[value]" :class="value"/></div>"#,
@@ -1239,7 +1255,7 @@ fn test_compile_nested_keyed_v_memo_reports_one_diagnostic() {
 
 #[test]
 fn test_compile_native_template_uses_plain_element_creation() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><template><span :class="value"/></template></div>"#,
@@ -1268,7 +1284,7 @@ fn test_compile_native_template_uses_plain_element_creation() {
 
 #[test]
 fn test_compile_dynamic_key_uses_keyed_fragment() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><span :key="id" :class="value"/></div>"#,
@@ -1298,7 +1314,7 @@ fn test_compile_dynamic_key_uses_keyed_fragment() {
 
 #[test]
 fn test_compile_static_key_uses_block_key_without_rendering_attribute() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(&allocator, r#"<div key="stable"/>"#, Default::default());
 
     assert!(
@@ -1313,7 +1329,7 @@ fn test_compile_static_key_uses_block_key_without_rendering_attribute() {
 
 #[test]
 fn test_compile_preserved_comment_counts_for_hydration_refs() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let result = compile_vapor(
         &allocator,
         r#"<div><!--keep--><span :class="value"/></div>"#,
@@ -1333,16 +1349,12 @@ fn test_compile_preserved_comment_counts_for_hydration_refs() {
         result.templates,
         vec![String::from("<div><!--keep--><span></span></div>")]
     );
-    assert!(
-        result.code.contains("_next(_child(n1), 1)"),
-        "{}",
-        result.code
-    );
+    assert!(result.code.contains("_next(_child(n1))"), "{}", result.code);
 }
 
 #[test]
 fn test_compile_dynamic_component_selector_forms() {
-    let allocator = Bump::new();
+    let allocator = vize_carton::Allocator::new();
     let static_result = compile_vapor(&allocator, r#"<component is="Foo"/>"#, Default::default());
     let shorthand_result = compile_vapor(&allocator, r#"<component :is/>"#, Default::default());
 

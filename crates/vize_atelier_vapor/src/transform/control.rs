@@ -108,7 +108,7 @@ pub(crate) fn transform_remaining_branches<'a>(
 ) -> NegativeBranch<'a> {
     if branches.is_empty() {
         // This shouldn't happen, but return an empty block just in case
-        return NegativeBranch::Block(BlockIRNode::new(ctx.allocator));
+        return NegativeBranch::Block(BlockIRNode::new(&ctx.allocator));
     }
 
     let branch = &branches[0];

@@ -8,7 +8,7 @@ const t1 = _template("<ul></ul>", true)
 _delegateEvents("click")
 export function render(_ctx) {
 const n1 = t1()
-_setInsertionState(n1, null, 0)
+_setInsertionState(n1)
 const n0 = _createFor(() => (_ctx.items), (_for_item0) => {
 const n3 = t0()
 const x3 = _txt(n3)

@@ -1,7 +1,6 @@
 //! Ordered physical-template and logical-hydration layout for direct children.
 
 use vize_atelier_core::{ElementType, TemplateChildNode};
-use vize_carton::ensure_sufficient_stack;
 
 use super::{is_plain_element, key::has_dynamic_key, template::is_static_element};
 
@@ -16,7 +15,6 @@ impl AnchorSlot {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InsertionPlan {
-    Prepend,
     Before(AnchorSlot),
     Append,
 }
@@ -26,14 +24,12 @@ pub(super) enum LayoutItem {
     Element {
         flat_index: usize,
         element_index: usize,
-        logical_index: usize,
         referenced: bool,
     },
     TextRun {
         start: usize,
         end: usize,
         element_index: usize,
-        logical_index: usize,
         dynamic: bool,
     },
     Comment {
@@ -47,7 +43,6 @@ pub(super) enum LayoutItem {
     Anchor {
         slot: AnchorSlot,
         element_index: usize,
-        logical_index: usize,
     },
 }
 
@@ -73,8 +68,8 @@ struct PendingInsertion {
 /// One linear plan shared by child lowering and static-template generation.
 ///
 /// Plain `<template>` wrappers are transparent. `element_index` addresses the
-/// client template, while `logical_index` addresses SSR output where inserted
-/// components and control-flow blocks already occupy sibling positions.
+/// client template. Concrete anchors keep that index aligned with hydration;
+/// `logical_index` is retained only for blocks appended after the template.
 pub(super) struct ChildLayout<'node, 'alloc> {
     children: std::vec::Vec<&'node TemplateChildNode<'alloc>>,
     items: std::vec::Vec<LayoutItem>,
@@ -160,7 +155,7 @@ impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
             match child {
                 TemplateChildNode::Element(element)
                     if element.tag_type != ElementType::Element
-                        || matches!(element.tag.as_str(), "component" | "Component")
+                        || matches!(element.tag, "component" | "Component")
                         || is_plain_element(element)
                         || (self.process_dynamic_keys && has_dynamic_key(element)) =>
                 {
@@ -186,7 +181,6 @@ impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
                     self.items.push(LayoutItem::Element {
                         flat_index,
                         element_index,
-                        logical_index,
                         referenced: !is_static_element(element),
                     });
                     element_index += 1;
@@ -213,7 +207,6 @@ impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
                             start: flat_index,
                             end: flat_index + 1,
                             element_index,
-                            logical_index,
                             dynamic,
                         });
                         element_index += 1;
@@ -243,35 +236,31 @@ impl<'node, 'alloc> ChildLayout<'node, 'alloc> {
         element_index: &mut usize,
         next_flat_index: Option<usize>,
     ) {
-        let Some(first) = pending.first().copied() else {
+        if pending.is_empty() {
             return;
-        };
-
-        let insertion = match next_flat_index {
-            None => InsertionPlan::Append,
-            Some(_) if *element_index == 0 => InsertionPlan::Prepend,
-            Some(next_flat_index) => {
-                debug_assert!(first.flat_index < next_flat_index);
-                InsertionPlan::Before(AnchorSlot(self.anchor_count))
-            }
-        };
+        }
 
         for child in pending.drain(..) {
+            let insertion = if let Some(next_flat_index) = next_flat_index {
+                debug_assert!(child.flat_index < next_flat_index);
+                InsertionPlan::Before(AnchorSlot(self.anchor_count))
+            } else {
+                InsertionPlan::Append
+            };
             self.items.push(LayoutItem::Inserted {
                 flat_index: child.flat_index,
                 logical_index: child.logical_index,
                 insertion,
             });
-        }
 
-        if let InsertionPlan::Before(slot) = insertion {
-            self.items.push(LayoutItem::Anchor {
-                slot,
-                element_index: *element_index,
-                logical_index: first.logical_index,
-            });
-            self.anchor_count += 1;
-            *element_index += 1;
+            if let InsertionPlan::Before(slot) = insertion {
+                self.items.push(LayoutItem::Anchor {
+                    slot,
+                    element_index: *element_index,
+                });
+                self.anchor_count += 1;
+                *element_index += 1;
+            }
         }
     }
 }
@@ -280,11 +269,14 @@ fn flatten_children<'node, 'alloc>(
     children: &'node [TemplateChildNode<'alloc>],
     flat: &mut std::vec::Vec<&'node TemplateChildNode<'alloc>>,
 ) {
-    for child in children {
+    let mut pending = vize_atelier_core::walk_probe::vapor_children(children)
+        .rev()
+        .collect::<std::vec::Vec<_>>();
+    while let Some(child) = pending.pop() {
         if let TemplateChildNode::Element(element) = child
             && element.tag_type == ElementType::Template
         {
-            ensure_sufficient_stack(|| flatten_children(&element.children, flat));
+            pending.extend(vize_atelier_core::walk_probe::vapor_children(&element.children).rev());
         } else {
             flat.push(child);
         }

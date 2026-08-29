@@ -15,7 +15,6 @@ use super::{BlockIRNode, TransformContext, transform_existing_element};
 struct RefTarget {
     id: usize,
     element_index: usize,
-    logical_index: usize,
 }
 
 /// Transform an element after reserving IDs for all runtime child items.
@@ -115,7 +114,7 @@ fn transform_layout_children<'node, 'a>(
                 insertion,
             } => {
                 let insertion = resolve_insertion(parent_id, logical_index, insertion, anchor_ids);
-                match layout.child(flat_index) {
+                ensure_sufficient_stack(|| match layout.child(flat_index) {
                     TemplateChildNode::Element(element) => {
                         transform_existing_element(ctx, element, child_id, Some(insertion), block);
                     }
@@ -126,7 +125,7 @@ fn transform_layout_children<'node, 'a>(
                         transform_for_node_into_parent(ctx, for_node, block, child_id, insertion);
                     }
                     _ => {}
-                }
+                });
             }
             _ => unreachable!("runtime iterator returned a non-runtime layout item"),
         }
@@ -147,13 +146,11 @@ fn emit_ref_operations<'a>(
         let target = match *item {
             LayoutItem::Element {
                 element_index,
-                logical_index,
                 referenced: true,
                 ..
             }
             | LayoutItem::TextRun {
                 element_index,
-                logical_index,
                 dynamic: true,
                 ..
             } => Some(RefTarget {
@@ -161,7 +158,6 @@ fn emit_ref_operations<'a>(
                     .next()
                     .expect("runtime layout item must have an allocated ID"),
                 element_index,
-                logical_index,
             }),
             LayoutItem::Inserted { .. } => {
                 child_ids
@@ -172,11 +168,10 @@ fn emit_ref_operations<'a>(
             LayoutItem::Anchor {
                 slot,
                 element_index,
-                logical_index,
+                ..
             } => Some(RefTarget {
                 id: anchor_ids[slot.index()],
                 element_index,
-                logical_index,
             }),
             _ => None,
         };
@@ -189,7 +184,6 @@ fn emit_ref_operations<'a>(
             block.operation.push(OperationNode::NextRef(NextRefIRNode {
                 child_id: target.id,
                 prev_id: prev.id,
-                logical_index: target.logical_index,
             }));
         } else {
             block
@@ -198,7 +192,6 @@ fn emit_ref_operations<'a>(
                     child_id: target.id,
                     parent_id,
                     element_index: target.element_index,
-                    logical_index: target.logical_index,
                 }));
         }
         previous = Some(target);
@@ -213,7 +206,6 @@ fn resolve_insertion(
     anchor_ids: &[usize],
 ) -> InsertionState {
     let anchor = match insertion {
-        InsertionPlan::Prepend => InsertionAnchor::Prepend,
         InsertionPlan::Before(slot) => InsertionAnchor::Before(anchor_ids[slot.index()]),
         InsertionPlan::Append => InsertionAnchor::Append,
     };

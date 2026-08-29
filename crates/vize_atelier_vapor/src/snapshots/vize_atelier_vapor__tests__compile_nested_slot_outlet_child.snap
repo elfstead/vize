@@ -6,7 +6,7 @@ import { createSlot as _createSlot, setInsertionState as _setInsertionState, tem
 const t0 = _template("<div></div>", true)
 export function render(_ctx) {
 const n1 = t0()
-_setInsertionState(n1, null, 0)
+_setInsertionState(n1)
 const n0 = _createSlot("default", { row: () => (_ctx.item), index: () => (_ctx.i) })
 return n1
 }
